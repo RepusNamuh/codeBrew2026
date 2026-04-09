@@ -1,0 +1,78 @@
+{
+	"nodes": [
+		{
+			"id": "victorian-era-cluster",
+			"name": "Victorian Era Constellation",
+			"position": { "x": 56, "y": 42 },
+			"node luminosity": 1.2,
+			"node size": 24,
+			"node image": "",
+			"node children": [
+				{
+					"id": "flinders-street-station",
+					"name": "Flinders Street Station",
+					"position": { "x": 44, "y": 52 },
+					"node luminosity": 1.1,
+					"node size": 18,
+					"node image": "images/flinders-street-station.jpg",
+					"node children": []
+				},
+				{
+					"id": "royal-exhibition-building",
+					"name": "Royal Exhibition Building",
+					"position": { "x": 58, "y": 44 },
+					"node luminosity": 1.05,
+					"node size": 17,
+					"node image": "",
+					"node children": []
+				},
+				{
+					"id": "state-library-victoria",
+					"name": "State Library Victoria",
+					"position": { "x": 64, "y": 55 },
+					"node luminosity": 0.95,
+					"node size": 16,
+					"node image": "",
+					"node children": []
+				}
+			]
+		},
+		{
+			"id": "gold-rush-cluster",
+			"name": "Gold Rush Constellation",
+			"position": { "x": 32, "y": 35 },
+			"node luminosity": 1.1,
+			"node size": 21,
+			"node image": "",
+			"node children": [
+				{
+					"id": "old-melbourne-gaol",
+					"name": "Old Melbourne Gaol",
+					"position": { "x": 30, "y": 49 },
+					"node luminosity": 0.9,
+					"node size": 15,
+					"node image": "",
+					"node children": []
+				},
+				{
+					"id": "treasury-building",
+					"name": "Old Treasury Building",
+					"position": { "x": 40, "y": 42 },
+					"node luminosity": 0.88,
+					"node size": 14,
+					"node image": "",
+					"node children": []
+				}
+			]
+		},
+		{
+			"id": "queen-victoria-market",
+			"name": "Queen Victoria Market",
+			"position": { "x": 69, "y": 28 },
+			"node luminosity": 0.86,
+			"node size": 15,
+			"node image": "res/queenVic.png",
+			"node children": []
+		}
+	]
+}
