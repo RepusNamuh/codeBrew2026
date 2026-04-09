@@ -249,11 +249,13 @@ body {
 
 .detail-panel {
 	position: fixed;
-	left: 16px;
+	left: auto;
+	right: 16px;
 	top: 88px;
-	width: min(420px, calc(100vw - 32px));
+	width: 360px;
 	max-width: calc(100vw - 32px);
-	max-height: min(76vh, 720px);
+	bottom: 14px;
+	max-height: none;
 	overflow: auto;
 	overscroll-behavior: contain;
 	padding: 14px;
@@ -386,10 +388,6 @@ body {
 	}
 
 	.detail-panel {
-		left: 14px;
-		right: 14px;
-		top: 72px;
-		width: auto;
 		padding: 12px;
 	}
 

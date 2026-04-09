@@ -5,8 +5,10 @@ const LEAF_FOCUS_SCALE = 2.85;
 const LEAF_FOCUS_TARGET_X = 32;
 const LEAF_FOCUS_TARGET_Y = 50;
 const DIMMED_NODE_LUMINOSITY = 0.5;
-const MIN_DETAIL_PANEL_WIDTH = 280;
-const MAX_DETAIL_PANEL_WIDTH = 540;
+const INFO_PANEL_FIXED_WIDTH = 360;
+const INFO_PANEL_RIGHT_GAP = 16;
+const INFO_PANEL_TOP = 88;
+const INFO_PANEL_BOTTOM = 14;
 
 function clampRange(value, min, max) {
 	if (max <= min) {
@@ -80,21 +82,6 @@ function getHaloCount(nodeSize) {
 		return 4;
 	}
 	return 5;
-}
-
-function rectanglesOverlap(rectA, rectB) {
-	return (
-		rectA.left < rectB.right &&
-		rectA.right > rectB.left &&
-		rectA.top < rectB.bottom &&
-		rectA.bottom > rectB.top
-	);
-}
-
-function rectangleOverlapArea(rectA, rectB) {
-	const overlapWidth = Math.max(0, Math.min(rectA.right, rectB.right) - Math.max(rectA.left, rectB.left));
-	const overlapHeight = Math.max(0, Math.min(rectA.bottom, rectB.bottom) - Math.max(rectA.top, rectB.top));
-	return overlapWidth * overlapHeight;
 }
 
 async function fetchNodes() {
@@ -232,11 +219,11 @@ function App() {
 			return;
 		}
 
-		setSelectedNode(node);
-
 		const childCount = node.nodeChildren.length;
 
 		if (childCount > 0) {
+			setSelectedNode(null);
+			setHoveredNode(null);
 			setLeafFocusNodeId(null);
 			setStatusMessage(`Zooming into ${node.name} (${childCount} child nodes)...`);
 			setCamera({
@@ -254,6 +241,8 @@ function App() {
 			});
 			return;
 		}
+
+		setSelectedNode(node);
 
 		setLeafFocusNodeId(node.id);
 		setCamera({
@@ -320,190 +309,22 @@ function App() {
 		hoveredNode || (selectedNode && selectedNode.nodeChildren.length === 0 ? selectedNode : null);
 	const isHoverDimmingActive = Boolean(dimmingReferenceNode);
 	const isLeafFocusActive = Boolean(leafFocusNodeId);
-	const detailPanelLayout = useMemo(() => {
-		if (!activeInfoNode) {
-			return null;
+	const panelWidth = useMemo(() => {
+		if (viewportSize.width <= 640) {
+			return Math.min(320, Math.max(220, viewportSize.width - 24));
 		}
-
-		const margin = 16;
-		const topSafePadding = viewportSize.width < 700 ? 76 : 102;
-		const gap = Math.max(14, Math.round(16 * responsiveUiScale));
-		const viewportMaxPanelWidth = Math.max(180, viewportSize.width - margin * 2);
-		const minPanelWidth = Math.min(MIN_DETAIL_PANEL_WIDTH, viewportMaxPanelWidth);
-		const preferredPanelWidth = clampRange(
-			viewportSize.width * (isLeafFocusActive ? 0.36 : 0.33),
-			minPanelWidth,
-			Math.min(MAX_DETAIL_PANEL_WIDTH, viewportMaxPanelWidth)
-		);
-		const availableHeight = Math.max(170, viewportSize.height - topSafePadding - margin);
-		const preferredPanelHeight = Math.floor(
-			viewportSize.height * (isLeafFocusActive ? 0.72 : 0.76)
-		);
-		const panelHeight = Math.min(preferredPanelHeight, availableHeight);
-
-		const nodePercentX = clampRange(activeInfoNode.position.x + camera.tx, 0, 100);
-		const nodePercentY = clampRange(activeInfoNode.position.y + camera.ty, 0, 100);
-		const nodePixelX = (viewportSize.width * nodePercentX) / 100;
-		const nodePixelY = (viewportSize.height * nodePercentY) / 100;
-		const nodeRadius = Math.max(
-			14,
-			(activeInfoNode.nodeSize * responsiveNodeScale * Math.max(1, camera.scale)) / 2 + 12
-		);
-		const nodeExclusionRect = {
-			left: nodePixelX - nodeRadius,
-			right: nodePixelX + nodeRadius,
-			top: nodePixelY - nodeRadius,
-			bottom: nodePixelY + nodeRadius,
-		};
-
-		const availableRight = Math.max(0, viewportSize.width - (nodePixelX + gap) - margin);
-		const availableLeft = Math.max(0, nodePixelX - gap - margin);
-		const widthRight = Math.min(preferredPanelWidth, availableRight);
-		const widthLeft = Math.min(preferredPanelWidth, availableLeft);
-		const widthVertical = Math.min(preferredPanelWidth, viewportMaxPanelWidth);
-		const minTop = Math.max(margin, topSafePadding);
-		const maxTop = Math.max(minTop, viewportSize.height - panelHeight - margin);
-		const maxLeft = Math.max(margin, viewportSize.width - widthVertical - margin);
-
-		const candidatesBySide = {
-			right: null,
-			left: null,
-			top: null,
-			bottom: null,
-		};
-
-		if (widthRight >= 80) {
-			const top = clampRange(nodePixelY - panelHeight * 0.5, minTop, maxTop);
-			const left = clampRange(nodePixelX + gap, margin, viewportSize.width - widthRight - margin);
-			candidatesBySide.right = {
-				side: "right",
-				left,
-				top,
-				width: widthRight,
-				height: panelHeight,
-				right: left + widthRight,
-				bottom: top + panelHeight,
-			};
-		}
-
-		if (widthLeft >= 80) {
-			const top = clampRange(nodePixelY - panelHeight * 0.5, minTop, maxTop);
-			const left = clampRange(nodePixelX - gap - widthLeft, margin, viewportSize.width - widthLeft - margin);
-			candidatesBySide.left = {
-				side: "left",
-				left,
-				top,
-				width: widthLeft,
-				height: panelHeight,
-				right: left + widthLeft,
-				bottom: top + panelHeight,
-			};
-		}
-
-		{
-			const top = clampRange(nodePixelY - gap - panelHeight, minTop, maxTop);
-			const left = clampRange(nodePixelX - widthVertical * 0.5, margin, maxLeft);
-			candidatesBySide.top = {
-				side: "top",
-				left,
-				top,
-				width: widthVertical,
-				height: panelHeight,
-				right: left + widthVertical,
-				bottom: top + panelHeight,
-			};
-		}
-
-		{
-			const top = clampRange(nodePixelY + gap, minTop, maxTop);
-			const left = clampRange(nodePixelX - widthVertical * 0.5, margin, maxLeft);
-			candidatesBySide.bottom = {
-				side: "bottom",
-				left,
-				top,
-				width: widthVertical,
-				height: panelHeight,
-				right: left + widthVertical,
-				bottom: top + panelHeight,
-			};
-		}
-
-		const sidePriority =
-			availableRight >= availableLeft
-				? ["right", "left", "top", "bottom"]
-				: ["left", "right", "top", "bottom"];
-		const orderedCandidates = sidePriority
-			.map((sideKey) => candidatesBySide[sideKey])
-			.filter(Boolean);
-		const nonOverlappingCandidate = orderedCandidates.find(
-			(candidate) => candidate && !rectanglesOverlap(candidate, nodeExclusionRect)
-		);
-		let selectedPlacement = nonOverlappingCandidate;
-
-		if (!selectedPlacement) {
-			selectedPlacement = orderedCandidates
-				.filter(Boolean)
-				.sort(
-					(candidateA, candidateB) =>
-						rectangleOverlapArea(candidateA, nodeExclusionRect) -
-						rectangleOverlapArea(candidateB, nodeExclusionRect)
-				)[0];
-		}
-
-		if (!selectedPlacement) {
-			return {
-				side: "right",
-				style: {
-					left: `${margin}px`,
-					top: `${minTop}px`,
-					width: `${Math.round(Math.min(preferredPanelWidth, viewportMaxPanelWidth))}px`,
-					maxHeight: `${Math.round(panelHeight)}px`,
-				},
-			};
-		}
-
-		let resolvedPlacement = selectedPlacement;
-		if (rectanglesOverlap(resolvedPlacement, nodeExclusionRect)) {
-			const canPlaceBelowNode = nodeExclusionRect.bottom + gap + panelHeight <= viewportSize.height - margin;
-			const canPlaceAboveNode = nodeExclusionRect.top - gap - panelHeight >= minTop;
-
-			if (canPlaceBelowNode) {
-				const top = nodeExclusionRect.bottom + gap;
-				resolvedPlacement = {
-					...resolvedPlacement,
-					top,
-					bottom: top + panelHeight,
-				};
-			} else if (canPlaceAboveNode) {
-				const top = nodeExclusionRect.top - gap - panelHeight;
-				resolvedPlacement = {
-					...resolvedPlacement,
-					top,
-					bottom: top + panelHeight,
-				};
-			}
-		}
-
-		return {
-			side: resolvedPlacement.side,
-			style: {
-				left: `${Math.round(resolvedPlacement.left)}px`,
-				top: `${Math.round(resolvedPlacement.top)}px`,
-				width: `${Math.round(resolvedPlacement.width)}px`,
-				maxHeight: `${Math.round(resolvedPlacement.height)}px`,
-			},
-		};
-	}, [
-		activeInfoNode,
-		camera.tx,
-		camera.ty,
-		camera.scale,
-		isLeafFocusActive,
-		responsiveNodeScale,
-		responsiveUiScale,
-		viewportSize.height,
-		viewportSize.width,
-	]);
+		return Math.min(INFO_PANEL_FIXED_WIDTH, Math.max(220, viewportSize.width - 32));
+	}, [viewportSize.width]);
+	const detailPanelStyle = useMemo(
+		() => ({
+			left: "auto",
+			width: `${Math.round(panelWidth)}px`,
+			right: `${INFO_PANEL_RIGHT_GAP}px`,
+			top: `${viewportSize.width <= 640 ? 72 : INFO_PANEL_TOP}px`,
+			bottom: `${viewportSize.width <= 640 ? 10 : INFO_PANEL_BOTTOM}px`,
+		}),
+		[panelWidth, viewportSize.width]
+	);
 	return (
 		<div className="app-shell" style={appScaleStyle}>
 			<h1 className="canvas-title">Star Canvas</h1>
@@ -589,7 +410,7 @@ function App() {
 			{activeInfoNode ? (
 				<aside
 					className="detail-panel"
-					style={detailPanelLayout ? detailPanelLayout.style : undefined}
+					style={detailPanelStyle}
 					aria-live="polite"
 				>
 					<h2 className="detail-title">{activeInfoNode.name}</h2>
