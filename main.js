@@ -5,6 +5,15 @@ const LEAF_FOCUS_SCALE = 2.85;
 const LEAF_FOCUS_TARGET_X = 32;
 const LEAF_FOCUS_TARGET_Y = 50;
 const DIMMED_NODE_LUMINOSITY = 0.5;
+const MIN_DETAIL_PANEL_WIDTH = 280;
+const MAX_DETAIL_PANEL_WIDTH = 540;
+
+function clampRange(value, min, max) {
+	if (max <= min) {
+		return min;
+	}
+	return Math.min(max, Math.max(min, value));
+}
 
 function clampNumber(value, min, max, fallback) {
 	const parsed = Number(value);
@@ -73,6 +82,21 @@ function getHaloCount(nodeSize) {
 	return 5;
 }
 
+function rectanglesOverlap(rectA, rectB) {
+	return (
+		rectA.left < rectB.right &&
+		rectA.right > rectB.left &&
+		rectA.top < rectB.bottom &&
+		rectA.bottom > rectB.top
+	);
+}
+
+function rectangleOverlapArea(rectA, rectB) {
+	const overlapWidth = Math.max(0, Math.min(rectA.right, rectB.right) - Math.max(rectA.left, rectB.left));
+	const overlapHeight = Math.max(0, Math.min(rectA.bottom, rectB.bottom) - Math.max(rectA.top, rectB.top));
+	return overlapWidth * overlapHeight;
+}
+
 async function fetchNodes() {
 	const response = await fetch("./nodes.json", { cache: "no-store" });
 	if (!response.ok) {
@@ -83,6 +107,16 @@ async function fetchNodes() {
 }
 
 function App() {
+	const [viewportSize, setViewportSize] = useState(() => {
+		if (typeof window === "undefined") {
+			return { width: 1280, height: 720 };
+		}
+
+		return {
+			width: window.innerWidth,
+			height: window.innerHeight,
+		};
+	});
 	const [nodeStack, setNodeStack] = useState([]);
 	const [pathStack, setPathStack] = useState(["Star Canvas"]);
 	const [statusMessage, setStatusMessage] = useState("Loading nodes from nodes.json...");
@@ -123,6 +157,37 @@ function App() {
 			isMounted = false;
 			if (zoomTimerRef.current) {
 				window.clearTimeout(zoomTimerRef.current);
+			}
+		};
+	}, []);
+
+	useEffect(() => {
+		if (typeof window === "undefined") {
+			return undefined;
+		}
+
+		let frameId = null;
+
+		function handleResize() {
+			if (frameId !== null) {
+				window.cancelAnimationFrame(frameId);
+			}
+
+			frameId = window.requestAnimationFrame(() => {
+				setViewportSize({
+					width: window.innerWidth,
+					height: window.innerHeight,
+				});
+				frameId = null;
+			});
+		}
+
+		window.addEventListener("resize", handleResize, { passive: true });
+
+		return () => {
+			window.removeEventListener("resize", handleResize);
+			if (frameId !== null) {
+				window.cancelAnimationFrame(frameId);
 			}
 		};
 	}, []);
@@ -236,11 +301,211 @@ function App() {
 	const canZoomOut = nodeStack.length > 1;
 	const selectedNodeHasImage = Boolean(activeInfoNode && activeInfoNode.nodeImage);
 	const showSelectedImage = selectedNodeHasImage && imageLoadState !== "error";
-	const isHoverDimmingActive = Boolean(hoveredNode);
+	const responsiveNodeScale = useMemo(() => {
+		const base = Math.min(viewportSize.width / 1360, viewportSize.height / 900);
+		return clampRange(base, 0.68, 1.35);
+	}, [viewportSize.height, viewportSize.width]);
+	const responsiveUiScale = useMemo(() => {
+		const base = Math.min(viewportSize.width / 1280, viewportSize.height / 860);
+		return clampRange(base, 0.76, 1.28);
+	}, [viewportSize.height, viewportSize.width]);
+	const appScaleStyle = useMemo(
+		() => ({
+			"--node-scale": responsiveNodeScale.toFixed(3),
+			"--ui-scale": responsiveUiScale.toFixed(3),
+		}),
+		[responsiveNodeScale, responsiveUiScale]
+	);
+	const dimmingReferenceNode =
+		hoveredNode || (selectedNode && selectedNode.nodeChildren.length === 0 ? selectedNode : null);
+	const isHoverDimmingActive = Boolean(dimmingReferenceNode);
 	const isLeafFocusActive = Boolean(leafFocusNodeId);
+	const detailPanelLayout = useMemo(() => {
+		if (!activeInfoNode) {
+			return null;
+		}
 
+		const margin = 16;
+		const topSafePadding = viewportSize.width < 700 ? 76 : 102;
+		const gap = Math.max(14, Math.round(16 * responsiveUiScale));
+		const viewportMaxPanelWidth = Math.max(180, viewportSize.width - margin * 2);
+		const minPanelWidth = Math.min(MIN_DETAIL_PANEL_WIDTH, viewportMaxPanelWidth);
+		const preferredPanelWidth = clampRange(
+			viewportSize.width * (isLeafFocusActive ? 0.36 : 0.33),
+			minPanelWidth,
+			Math.min(MAX_DETAIL_PANEL_WIDTH, viewportMaxPanelWidth)
+		);
+		const availableHeight = Math.max(170, viewportSize.height - topSafePadding - margin);
+		const preferredPanelHeight = Math.floor(
+			viewportSize.height * (isLeafFocusActive ? 0.72 : 0.76)
+		);
+		const panelHeight = Math.min(preferredPanelHeight, availableHeight);
+
+		const nodePercentX = clampRange(activeInfoNode.position.x + camera.tx, 0, 100);
+		const nodePercentY = clampRange(activeInfoNode.position.y + camera.ty, 0, 100);
+		const nodePixelX = (viewportSize.width * nodePercentX) / 100;
+		const nodePixelY = (viewportSize.height * nodePercentY) / 100;
+		const nodeRadius = Math.max(
+			14,
+			(activeInfoNode.nodeSize * responsiveNodeScale * Math.max(1, camera.scale)) / 2 + 12
+		);
+		const nodeExclusionRect = {
+			left: nodePixelX - nodeRadius,
+			right: nodePixelX + nodeRadius,
+			top: nodePixelY - nodeRadius,
+			bottom: nodePixelY + nodeRadius,
+		};
+
+		const availableRight = Math.max(0, viewportSize.width - (nodePixelX + gap) - margin);
+		const availableLeft = Math.max(0, nodePixelX - gap - margin);
+		const widthRight = Math.min(preferredPanelWidth, availableRight);
+		const widthLeft = Math.min(preferredPanelWidth, availableLeft);
+		const widthVertical = Math.min(preferredPanelWidth, viewportMaxPanelWidth);
+		const minTop = Math.max(margin, topSafePadding);
+		const maxTop = Math.max(minTop, viewportSize.height - panelHeight - margin);
+		const maxLeft = Math.max(margin, viewportSize.width - widthVertical - margin);
+
+		const candidatesBySide = {
+			right: null,
+			left: null,
+			top: null,
+			bottom: null,
+		};
+
+		if (widthRight >= 80) {
+			const top = clampRange(nodePixelY - panelHeight * 0.5, minTop, maxTop);
+			const left = clampRange(nodePixelX + gap, margin, viewportSize.width - widthRight - margin);
+			candidatesBySide.right = {
+				side: "right",
+				left,
+				top,
+				width: widthRight,
+				height: panelHeight,
+				right: left + widthRight,
+				bottom: top + panelHeight,
+			};
+		}
+
+		if (widthLeft >= 80) {
+			const top = clampRange(nodePixelY - panelHeight * 0.5, minTop, maxTop);
+			const left = clampRange(nodePixelX - gap - widthLeft, margin, viewportSize.width - widthLeft - margin);
+			candidatesBySide.left = {
+				side: "left",
+				left,
+				top,
+				width: widthLeft,
+				height: panelHeight,
+				right: left + widthLeft,
+				bottom: top + panelHeight,
+			};
+		}
+
+		{
+			const top = clampRange(nodePixelY - gap - panelHeight, minTop, maxTop);
+			const left = clampRange(nodePixelX - widthVertical * 0.5, margin, maxLeft);
+			candidatesBySide.top = {
+				side: "top",
+				left,
+				top,
+				width: widthVertical,
+				height: panelHeight,
+				right: left + widthVertical,
+				bottom: top + panelHeight,
+			};
+		}
+
+		{
+			const top = clampRange(nodePixelY + gap, minTop, maxTop);
+			const left = clampRange(nodePixelX - widthVertical * 0.5, margin, maxLeft);
+			candidatesBySide.bottom = {
+				side: "bottom",
+				left,
+				top,
+				width: widthVertical,
+				height: panelHeight,
+				right: left + widthVertical,
+				bottom: top + panelHeight,
+			};
+		}
+
+		const sidePriority =
+			availableRight >= availableLeft
+				? ["right", "left", "top", "bottom"]
+				: ["left", "right", "top", "bottom"];
+		const orderedCandidates = sidePriority
+			.map((sideKey) => candidatesBySide[sideKey])
+			.filter(Boolean);
+		const nonOverlappingCandidate = orderedCandidates.find(
+			(candidate) => candidate && !rectanglesOverlap(candidate, nodeExclusionRect)
+		);
+		let selectedPlacement = nonOverlappingCandidate;
+
+		if (!selectedPlacement) {
+			selectedPlacement = orderedCandidates
+				.filter(Boolean)
+				.sort(
+					(candidateA, candidateB) =>
+						rectangleOverlapArea(candidateA, nodeExclusionRect) -
+						rectangleOverlapArea(candidateB, nodeExclusionRect)
+				)[0];
+		}
+
+		if (!selectedPlacement) {
+			return {
+				side: "right",
+				style: {
+					left: `${margin}px`,
+					top: `${minTop}px`,
+					width: `${Math.round(Math.min(preferredPanelWidth, viewportMaxPanelWidth))}px`,
+					maxHeight: `${Math.round(panelHeight)}px`,
+				},
+			};
+		}
+
+		let resolvedPlacement = selectedPlacement;
+		if (rectanglesOverlap(resolvedPlacement, nodeExclusionRect)) {
+			const canPlaceBelowNode = nodeExclusionRect.bottom + gap + panelHeight <= viewportSize.height - margin;
+			const canPlaceAboveNode = nodeExclusionRect.top - gap - panelHeight >= minTop;
+
+			if (canPlaceBelowNode) {
+				const top = nodeExclusionRect.bottom + gap;
+				resolvedPlacement = {
+					...resolvedPlacement,
+					top,
+					bottom: top + panelHeight,
+				};
+			} else if (canPlaceAboveNode) {
+				const top = nodeExclusionRect.top - gap - panelHeight;
+				resolvedPlacement = {
+					...resolvedPlacement,
+					top,
+					bottom: top + panelHeight,
+				};
+			}
+		}
+
+		return {
+			side: resolvedPlacement.side,
+			style: {
+				left: `${Math.round(resolvedPlacement.left)}px`,
+				top: `${Math.round(resolvedPlacement.top)}px`,
+				width: `${Math.round(resolvedPlacement.width)}px`,
+				maxHeight: `${Math.round(resolvedPlacement.height)}px`,
+			},
+		};
+	}, [
+		activeInfoNode,
+		camera.tx,
+		camera.ty,
+		camera.scale,
+		isLeafFocusActive,
+		responsiveNodeScale,
+		responsiveUiScale,
+		viewportSize.height,
+		viewportSize.width,
+	]);
 	return (
-		<div className="app-shell">
+		<div className="app-shell" style={appScaleStyle}>
 			<h1 className="canvas-title">Star Canvas</h1>
 
 			{canZoomOut ? (
@@ -255,7 +520,8 @@ function App() {
 						{activeNodes.map((node) => {
 							const childCount = node.nodeChildren.length;
 							const hasChildrenClass = childCount > 0 ? " has-children" : "";
-							const isDimmedByHover = isHoverDimmingActive && hoveredNode.id !== node.id;
+							const isDimmedByHover =
+								isHoverDimmingActive && dimmingReferenceNode.id !== node.id;
 							const isLeafFocusedNode = leafFocusNodeId === node.id;
 							const dimmedClass = isDimmedByHover ? " is-dimmed" : "";
 							const focusedClass = isLeafFocusedNode ? " is-leaf-focused" : "";
@@ -266,7 +532,6 @@ function App() {
 									key={node.id}
 									type="button"
 									className={`star-node${hasChildrenClass}${dimmedClass}${focusedClass}`}
-									data-name={node.name}
 									aria-label={node.name}
 									onClick={(event) => {
 										event.stopPropagation();
@@ -323,7 +588,8 @@ function App() {
 
 			{activeInfoNode ? (
 				<aside
-					className={`detail-panel${isLeafFocusActive ? " leaf-focus" : ""}`}
+					className="detail-panel"
+					style={detailPanelLayout ? detailPanelLayout.style : undefined}
 					aria-live="polite"
 				>
 					<h2 className="detail-title">{activeInfoNode.name}</h2>
@@ -361,6 +627,11 @@ function App() {
 			<div className="hud">
 				<p className="cluster-path">{pathStack.join(" / ")}</p>
 				<p className="interaction-note" aria-live="polite">{statusMessage}</p>
+				{isLeafFocusActive ? (
+					<p className="leaf-return-hint">
+						Leaf node focused. Click anywhere on empty canvas to return.
+					</p>
+				) : null}
 				{warningMessage ? <p className="warning-note">{warningMessage}</p> : null}
 			</div>
 		</div>

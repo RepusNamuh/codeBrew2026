@@ -17,6 +17,8 @@ body {
 }
 
 .app-shell {
+	--node-scale: 1;
+	--ui-scale: 1;
 	position: relative;
 	width: 100%;
 	height: 100%;
@@ -28,10 +30,7 @@ body {
 	position: absolute;
 	inset: 0;
 	overflow: hidden;
-	background:
-		linear-gradient(to bottom, rgba(0, 0, 0, 0.26), rgba(0, 0, 0, 0.68)),
-		url("res/canvasBackground.png") center center / cover no-repeat,
-		#000;
+	background: #000;
 }
 
 .canvas-title {
@@ -41,7 +40,7 @@ body {
 	transform: translateX(-50%);
 	margin: 0;
 	padding: 0 12px;
-	font-size: clamp(1.7rem, 4.8vw, 3.1rem);
+	font-size: clamp(1.3rem, calc((1rem + 2.8vw) * var(--ui-scale)), 3.2rem);
 	line-height: 1.1;
 	letter-spacing: 0.08em;
 	text-transform: uppercase;
@@ -63,14 +62,15 @@ body {
 
 .star-node {
 	--node-size: 18;
+	--effective-node-size: calc(var(--node-size) * var(--node-scale));
 	--node-luminosity: 1;
 	--halo-opacity-multiplier: 1;
 	position: absolute;
 	overflow: visible;
 	left: 50%;
 	top: 50%;
-	width: calc(var(--node-size) * 1px);
-	height: calc(var(--node-size) * 1px);
+	width: calc(var(--effective-node-size) * 1px);
+	height: calc(var(--effective-node-size) * 1px);
 	border: 0;
 	border-radius: 50%;
 	cursor: pointer;
@@ -85,11 +85,11 @@ body {
 		rgba(255, 196, 102, 0.35) 100%
 	);
 	box-shadow:
-		0 0 calc(8px + var(--node-size) * 0.3px)
+		0 0 calc(8px + var(--effective-node-size) * 0.3px)
 			rgba(255, 236, 192, calc(0.45 + var(--node-luminosity) * 0.4)),
-		0 0 calc(18px + var(--node-size) * 1px)
+		0 0 calc(18px + var(--effective-node-size) * 1px)
 			rgba(255, 215, 128, calc(0.28 + var(--node-luminosity) * 0.3)),
-		0 0 calc(34px + var(--node-size) * 1.8px)
+		0 0 calc(34px + var(--effective-node-size) * 1.8px)
 			rgba(255, 200, 120, calc(0.12 + var(--node-luminosity) * 0.25));
 }
 
@@ -150,32 +150,6 @@ body {
 	outline-offset: 6px;
 }
 
-.star-node::after {
-	content: attr(data-name);
-	position: absolute;
-	left: 50%;
-	bottom: calc(100% + 14px);
-	transform: translate(-50%, 6px);
-	padding: 6px 11px;
-	border-radius: 999px;
-	border: 1px solid rgba(255, 255, 255, 0.2);
-	background: rgba(10, 10, 10, 0.94);
-	color: #f5f8ff;
-	font-size: 0.82rem;
-	letter-spacing: 0.02em;
-	white-space: nowrap;
-	pointer-events: none;
-	opacity: 0;
-	transition: opacity 180ms ease, transform 180ms ease;
-	text-shadow: 0 0 8px rgba(255, 255, 255, 0.25);
-}
-
-.star-node:hover::after,
-.star-node:focus-visible::after {
-	opacity: 1;
-	transform: translate(-50%, 0);
-}
-
 .star-node.has-children::before {
 	content: "";
 	position: absolute;
@@ -198,6 +172,7 @@ body {
 
 .cluster-path,
 .interaction-note,
+.leaf-return-hint,
 .warning-note {
 	margin: 0;
 	max-width: 760px;
@@ -208,19 +183,32 @@ body {
 
 .cluster-path {
 	color: rgba(255, 255, 255, 0.84);
-	font-size: 0.86rem;
+	font-size: calc(0.86rem * var(--ui-scale));
 	margin-bottom: 5px;
 }
 
 .interaction-note {
 	color: rgba(255, 255, 255, 0.95);
-	font-size: 0.93rem;
+	font-size: calc(0.93rem * var(--ui-scale));
+}
+
+.leaf-return-hint {
+	margin-top: 6px;
+	display: inline-block;
+	padding: 6px 10px;
+	border-radius: 999px;
+	border: 1px solid rgba(255, 255, 255, 0.32);
+	background: rgba(6, 6, 6, 0.72);
+	color: rgba(255, 236, 191, 0.98);
+	font-size: calc(0.79rem * var(--ui-scale));
+	letter-spacing: 0.03em;
+	text-transform: uppercase;
 }
 
 .warning-note {
 	margin-top: 6px;
 	color: rgba(255, 188, 132, 0.96);
-	font-size: 0.82rem;
+	font-size: calc(0.82rem * var(--ui-scale));
 }
 
 .cluster-back {
@@ -233,7 +221,7 @@ body {
 	padding: 8px 12px;
 	border-radius: 999px;
 	cursor: pointer;
-	font-size: 0.82rem;
+	font-size: calc(0.82rem * var(--ui-scale));
 	letter-spacing: 0.03em;
 	text-transform: uppercase;
 	pointer-events: auto;
@@ -260,12 +248,14 @@ body {
 }
 
 .detail-panel {
-	position: absolute;
-	right: 16px;
+	position: fixed;
+	left: 16px;
 	top: 88px;
-	width: clamp(286px, 32vw, 470px);
+	width: min(420px, calc(100vw - 32px));
+	max-width: calc(100vw - 32px);
 	max-height: min(76vh, 720px);
 	overflow: auto;
+	overscroll-behavior: contain;
 	padding: 14px;
 	border: 1px solid rgba(255, 255, 255, 0.16);
 	border-radius: 14px;
@@ -277,32 +267,23 @@ body {
 	z-index: 5;
 }
 
-.detail-panel.leaf-focus {
-	top: 50%;
-	left: 50%;
-	right: auto;
-	transform: translate(1.5vw, -50%);
-	width: clamp(300px, 35vw, 500px);
-	max-height: min(74vh, 760px);
-}
-
 .detail-title {
 	margin: 0;
-	font-size: 1rem;
+	font-size: calc(1rem * var(--ui-scale));
 	letter-spacing: 0.02em;
 	color: rgba(255, 249, 226, 0.97);
 }
 
 .detail-meta {
 	margin: 7px 0 0;
-	font-size: 0.79rem;
+	font-size: calc(0.79rem * var(--ui-scale));
 	line-height: 1.35;
 	color: rgba(255, 255, 255, 0.72);
 }
 
 .detail-description {
 	margin: 10px 0 0;
-	font-size: 0.88rem;
+	font-size: calc(0.88rem * var(--ui-scale));
 	line-height: 1.5;
 	color: rgba(244, 244, 244, 0.92);
 	max-width: 65ch;
@@ -313,8 +294,8 @@ body {
 	position: relative;
 	margin-top: 11px;
 	width: 100%;
-	min-height: 154px;
-	max-height: 320px;
+	min-height: clamp(136px, 24vh, 170px);
+	max-height: clamp(220px, 34vh, 360px);
 	border-radius: 11px;
 	overflow: hidden;
 	border: 1px solid rgba(255, 255, 255, 0.12);
@@ -329,7 +310,7 @@ body {
 	display: block;
 	width: 100%;
 	height: 100%;
-	max-height: 320px;
+	max-height: clamp(220px, 34vh, 360px);
 	object-fit: cover;
 }
 
@@ -337,7 +318,7 @@ body {
 	margin: 0;
 	padding: 14px;
 	text-align: center;
-	font-size: 0.83rem;
+	font-size: calc(0.83rem * var(--ui-scale));
 	line-height: 1.4;
 	color: rgba(255, 255, 255, 0.76);
 }
@@ -353,7 +334,7 @@ body {
 	border: 1px solid rgba(255, 255, 255, 0.26);
 	background: rgba(0, 0, 0, 0.58);
 	text-align: center;
-	font-size: 0.75rem;
+	font-size: calc(0.75rem * var(--ui-scale));
 	letter-spacing: 0.02em;
 	color: rgba(255, 255, 255, 0.86);
 }
@@ -401,7 +382,7 @@ body {
 
 	.canvas-title {
 		top: 10px;
-		font-size: clamp(1.35rem, 7vw, 2rem);
+		font-size: clamp(1.18rem, calc((0.9rem + 4.8vw) * var(--ui-scale)), 2rem);
 	}
 
 	.detail-panel {
@@ -412,17 +393,8 @@ body {
 		padding: 12px;
 	}
 
-	.detail-panel.leaf-focus {
-		left: 14px;
-		right: 14px;
-		top: 72px;
-		transform: none;
-		width: auto;
-		max-height: min(66vh, 560px);
-	}
-
 	.cluster-back {
-		font-size: 0.75rem;
+		font-size: calc(0.75rem * var(--ui-scale));
 		padding: 7px 11px;
 		right: 12px;
 		top: 12px;
