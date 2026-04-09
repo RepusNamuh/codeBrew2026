@@ -3,6 +3,7 @@
 		{
 			"id": "victorian-era-cluster",
 			"name": "Victorian Era Constellation",
+			"description": "A gateway cluster for civic institutions built during Melbourne's late nineteenth-century expansion.",
 			"position": { "x": 56, "y": 42 },
 			"node luminosity": 1.2,
 			"node size": 24,
@@ -11,6 +12,7 @@
 				{
 					"id": "flinders-street-station",
 					"name": "Flinders Street Station",
+					"description": "An iconic transport landmark recognized for its domed architecture and long-standing role as the city's meeting point.",
 					"position": { "x": 44, "y": 52 },
 					"node luminosity": 1.1,
 					"node size": 18,
@@ -20,6 +22,7 @@
 				{
 					"id": "royal-exhibition-building",
 					"name": "Royal Exhibition Building",
+					"description": "One of Australia's earliest World Heritage listed buildings, symbolizing exhibition culture and industrial-era ambition.",
 					"position": { "x": 58, "y": 44 },
 					"node luminosity": 1.05,
 					"node size": 17,
@@ -29,6 +32,7 @@
 				{
 					"id": "state-library-victoria",
 					"name": "State Library Victoria",
+					"description": "A cultural anchor of public learning, known for preserving archives and inviting generations into shared knowledge spaces.",
 					"position": { "x": 64, "y": 55 },
 					"node luminosity": 0.95,
 					"node size": 16,
@@ -40,6 +44,7 @@
 		{
 			"id": "gold-rush-cluster",
 			"name": "Gold Rush Constellation",
+			"description": "A constellation mapped to places that echo migration, wealth, and social upheaval from the gold rush era.",
 			"position": { "x": 32, "y": 35 },
 			"node luminosity": 1.1,
 			"node size": 21,
@@ -48,6 +53,7 @@
 				{
 					"id": "old-melbourne-gaol",
 					"name": "Old Melbourne Gaol",
+					"description": "A former prison site tied to colonial justice stories, remembered for notorious inmates and public memory.",
 					"position": { "x": 30, "y": 49 },
 					"node luminosity": 0.9,
 					"node size": 15,
@@ -57,6 +63,7 @@
 				{
 					"id": "treasury-building",
 					"name": "Old Treasury Building",
+					"description": "Built to administer gold revenues, this building reflects the economic machinery that shaped nineteenth-century Melbourne.",
 					"position": { "x": 40, "y": 42 },
 					"node luminosity": 0.88,
 					"node size": 14,
@@ -68,6 +75,7 @@
 		{
 			"id": "queen-victoria-market",
 			"name": "Queen Victoria Market",
+			"description": "A living marketplace where food, trade, and everyday social rituals keep layers of city history visible.",
 			"position": { "x": 69, "y": 28 },
 			"node luminosity": 0.86,
 			"node size": 15,
