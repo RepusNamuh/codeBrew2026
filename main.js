@@ -1,15 +1,26 @@
 const { useEffect, useMemo, useRef, useState } = React;
 
-const ZOOM_DURATION_MS = 520;
-const LEAF_FOCUS_SCALE = 2.85;
-const LEAF_FOCUS_TARGET_X = 32;
-const LEAF_FOCUS_TARGET_Y = 50;
+// -----------------------------------------------------------------------------
+// Section 1: App configuration
+// -----------------------------------------------------------------------------
+
+const ZOOM_DURATION_MS = 760;
+const NODE_FOCUS_TARGET_X = 50;
+const NODE_FOCUS_TARGET_Y = 50;
+const PARENT_SCROLL_PROGRESS_STEP = 0.0024;
+const MIN_SCROLL_PROGRESS_STEP = 0.03;
+const SCROLL_REPOSITION_THRESHOLD_PX = 24;
 const DIMMED_NODE_LUMINOSITY = 0.5;
 const INFO_PANEL_FIXED_WIDTH = 360;
 const INFO_PANEL_RIGHT_GAP = 16;
 const INFO_PANEL_TOP = 88;
 const INFO_PANEL_BOTTOM = 14;
 
+// -----------------------------------------------------------------------------
+// Section 2: Generic utility helpers
+// -----------------------------------------------------------------------------
+
+// Clamp a numeric value to the provided range.
 function clampRange(value, min, max) {
 	if (max <= min) {
 		return min;
@@ -17,6 +28,7 @@ function clampRange(value, min, max) {
 	return Math.min(max, Math.max(min, value));
 }
 
+// Parse a value to number and constrain it. If invalid, return fallback.
 function clampNumber(value, min, max, fallback) {
 	const parsed = Number(value);
 	if (Number.isNaN(parsed)) {
@@ -31,18 +43,23 @@ function clampNumber(value, min, max, fallback) {
 	return parsed;
 }
 
+// -----------------------------------------------------------------------------
+// Section 3: Node data normalization and loading
+// -----------------------------------------------------------------------------
+
+// Normalize a node to the shape expected by the UI.
+// Handles legacy field names and recursively normalizes children.
 function normalizeNode(rawNode, fallbackId) {
-	const luminosity =
-		rawNode.nodeLuminosity ?? rawNode["node luminosity"] ?? rawNode["node lumnosity"];
-	const nodeSize = rawNode.nodeSize ?? rawNode["node size"];
-	const rawDescription =
-		rawNode.description ?? rawNode.nodeDescription ?? rawNode["node description"];
-	const rawNodeImage =
-		rawNode.nodeImage ?? rawNode["node image"] ?? rawNode.image ?? rawNode.imageUrl;
-	const rawChildren = rawNode.nodeChildren ?? rawNode["node children"];
+	const luminosity = rawNode.nodeLuminosity;
+	const nodeSize = rawNode.nodeSize;
+	const rawDescription = rawNode.description;
+	const rawNodeImage = rawNode.nodeImage;
+	const rawZoomedBackground = rawNode.zoomedBackground ? rawNode.zoomedBackground : "";
+	const rawChildren = rawNode.nodeChildren;
 	const children = Array.isArray(rawChildren) ? rawChildren : [];
 	const position = rawNode.position || {};
 	const nodeImage = typeof rawNodeImage === "string" ? rawNodeImage.trim() : "";
+	const zoomedBackground = typeof rawZoomedBackground === "string" ? rawZoomedBackground.trim() : "";
 	const description = typeof rawDescription === "string" ? rawDescription.trim() : "";
 
 	return {
@@ -52,6 +69,7 @@ function normalizeNode(rawNode, fallbackId) {
 		nodeSize: clampNumber(nodeSize, 8, 60, 18),
 		description,
 		nodeImage,
+		zoomedBackground,
 		position: {
 			x: clampNumber(position.x, 0, 100, 50),
 			y: clampNumber(position.y, 0, 100, 50),
@@ -60,6 +78,7 @@ function normalizeNode(rawNode, fallbackId) {
 	};
 }
 
+// Accept either an array payload or { nodes: [...] } payload and normalize all entries.
 function parseNodesPayload(payload) {
 	const rawNodes = Array.isArray(payload) ? payload : payload.nodes;
 	if (!Array.isArray(rawNodes)) {
@@ -84,6 +103,7 @@ function getHaloCount(nodeSize) {
 	return 5;
 }
 
+// Fetch node data from disk and normalize it before handing it to the UI.
 async function fetchNodes() {
 	const response = await fetch("./nodes.json", { cache: "no-store" });
 	if (!response.ok) {
@@ -93,18 +113,26 @@ async function fetchNodes() {
 	return parseNodesPayload(payload);
 }
 
-function App() {
-	const [viewportSize, setViewportSize] = useState(() => {
-		if (typeof window === "undefined") {
-			return { width: 1280, height: 720 };
-		}
+// -----------------------------------------------------------------------------
+// Section 4: Main React component
+// -----------------------------------------------------------------------------
 
-		return {
-			width: window.innerWidth,
-			height: window.innerHeight,
-		};
-	});
+function getWindowDimensions() {
+	if (typeof window === "undefined") {
+		return { width: 1280, height: 720};
+	}
+	return {
+		width: window.innerWidth,
+		height: window.innerHeight,
+	}
+}
+
+function App() {
+	// 4.1 - View state, interaction state, and animation state.
+	const [viewportSize, setViewportSize] = useState(getWindowDimensions());
+
 	const [nodeStack, setNodeStack] = useState([]);
+	const [backgroundStack, setBackgroundStack] = useState([""]);
 	const [pathStack, setPathStack] = useState(["Star Canvas"]);
 	const [statusMessage, setStatusMessage] = useState("Loading nodes from nodes.json...");
 	const [warningMessage, setWarningMessage] = useState("");
@@ -113,9 +141,17 @@ function App() {
 	const [leafFocusNodeId, setLeafFocusNodeId] = useState(null);
 	const [imageLoadState, setImageLoadState] = useState("none");
 	const [isZooming, setIsZooming] = useState(false);
+	const [parentScrollTransition, setParentScrollTransition] = useState(null);
 	const [camera, setCamera] = useState({ tx: 0, ty: 0, scale: 1 });
 	const zoomTimerRef = useRef(null);
+	const lastPointerPositionRef = useRef({ x: null, y: null });
+	const scrollStopGapRef = useRef({
+		requireReposition: false,
+		anchorX: null,
+		anchorY: null,
+	});
 
+	// 4.2 - Initial data load.
 	useEffect(() => {
 		let isMounted = true;
 
@@ -125,8 +161,9 @@ function App() {
 					return;
 				}
 				setNodeStack([loadedNodes]);
+				setBackgroundStack([""]);
 				setStatusMessage(
-					"Hover nodes for names. Click a node with children to zoom into its cluster."
+					"Hover to inspect details. Click any node to center it. Hover a parent and scroll to blend into its child cluster."
 				);
 			})
 			.catch((error) => {
@@ -148,6 +185,8 @@ function App() {
 		};
 	}, []);
 
+	// 4.3 - Keep viewport size in sync with window size.
+	// requestAnimationFrame is used to avoid excessive synchronous state updates.
 	useEffect(() => {
 		if (typeof window === "undefined") {
 			return undefined;
@@ -179,6 +218,7 @@ function App() {
 		};
 	}, []);
 
+	// The currently visible cluster is always the top of nodeStack.
 	const activeNodes = useMemo(() => {
 		if (nodeStack.length === 0) {
 			return [];
@@ -188,6 +228,7 @@ function App() {
 
 	const activeInfoNode = hoveredNode || selectedNode;
 
+	// Keep track of image loading state so the detail panel can render feedback.
 	useEffect(() => {
 		if (!activeInfoNode) {
 			setImageLoadState("none");
@@ -202,77 +243,247 @@ function App() {
 		setImageLoadState("loading");
 	}, [activeInfoNode]);
 
-	function runZoomTransition(nextAction) {
+	// Wrap zoom transitions so cluster changes happen after the camera animation.
+	function runZoomTransition(nextAction, options = {}) {
+		const shouldResetCamera = options.resetCamera !== false;
 		setIsZooming(true);
 		if (zoomTimerRef.current) {
 			window.clearTimeout(zoomTimerRef.current);
 		}
 		zoomTimerRef.current = window.setTimeout(() => {
 			nextAction();
-			setCamera({ tx: 0, ty: 0, scale: 1 });
+			if (shouldResetCamera) {
+				setCamera({ tx: 0, ty: 0, scale: 1 });
+			}
 			setIsZooming(false);
 		}, ZOOM_DURATION_MS);
 	}
 
+	function computeProgressStep(deltaY) {
+		const scaledStep = Math.abs(deltaY) * PARENT_SCROLL_PROGRESS_STEP;
+		return clampRange(scaledStep, MIN_SCROLL_PROGRESS_STEP, 0.34);
+	}
+
+	function activateScrollStopGap() {
+		scrollStopGapRef.current = {
+			requireReposition: true,
+			anchorX: lastPointerPositionRef.current.x,
+			anchorY: lastPointerPositionRef.current.y,
+		};
+	}
+
+	function isScrollStopGapActive() {
+		return scrollStopGapRef.current.requireReposition;
+	}
+
+	function handleCanvasMouseMove(event) {
+		lastPointerPositionRef.current = {
+			x: event.clientX,
+			y: event.clientY,
+		};
+
+		if (!scrollStopGapRef.current.requireReposition) {
+			return;
+		}
+
+		const { anchorX, anchorY } = scrollStopGapRef.current;
+
+		if (anchorX === null || anchorY === null) {
+			scrollStopGapRef.current.requireReposition = false;
+			setStatusMessage(
+				"Scroll-in rearmed. Hover or center a parent node and scroll up to blend into children."
+			);
+			return;
+		}
+
+		const deltaX = event.clientX - anchorX;
+		const deltaY = event.clientY - anchorY;
+		const movedDistance = Math.hypot(deltaX, deltaY);
+
+		if (movedDistance < SCROLL_REPOSITION_THRESHOLD_PX) {
+			return;
+		}
+
+		scrollStopGapRef.current.requireReposition = false;
+		setStatusMessage(
+			"Scroll-in rearmed. Hover or center a parent node and scroll up to blend into children."
+		);
+	}
+
+	function finalizeParentTransition(parentNode) {
+		const childCount = parentNode.nodeChildren.length;
+		if (childCount === 0) {
+			return;
+		}
+
+		setParentScrollTransition(null);
+		setCamera({ tx: 0, ty: 0, scale: 1 });
+		setSelectedNode(null);
+		setHoveredNode(null);
+		setLeafFocusNodeId(null);
+		setNodeStack((previousStack) => [...previousStack, parentNode.nodeChildren]);
+		setBackgroundStack((previousStack) => [...previousStack, parentNode.zoomedBackground || ""]);
+		setPathStack((previousPath) => [...previousPath, parentNode.name]);
+		activateScrollStopGap();
+		setStatusMessage(
+			`Viewing ${parentNode.name}. ${childCount} child node${childCount === 1 ? "" : "s"} loaded. Move mouse to re-arm scroll-in.`
+		);
+	}
+
+	function cancelParentTransition(parentNode) {
+		setParentScrollTransition(null);
+		setSelectedNode(parentNode);
+		setHoveredNode(null);
+		setLeafFocusNodeId(null);
+		setCamera({
+			tx: NODE_FOCUS_TARGET_X - parentNode.position.x,
+			ty: NODE_FOCUS_TARGET_Y - parentNode.position.y,
+			scale: 1,
+		});
+		setStatusMessage(
+			`${parentNode.name} centered. Scroll up to keep blending into the child cluster.`
+		);
+	}
+
+	function advanceParentTransition(parentNode, direction, progressStep) {
+		const currentProgress =
+			parentScrollTransition && parentScrollTransition.parentNode.id === parentNode.id
+				? parentScrollTransition.progress
+				: 0;
+		const nextProgress = clampRange(currentProgress + direction * progressStep, 0, 1);
+
+		if (nextProgress <= 0) {
+			cancelParentTransition(parentNode);
+			return;
+		}
+
+		if (nextProgress >= 1) {
+			finalizeParentTransition(parentNode);
+			return;
+		}
+
+		setSelectedNode(parentNode);
+		setHoveredNode(null);
+		setLeafFocusNodeId(null);
+		setParentScrollTransition({ parentNode, progress: nextProgress });
+		setStatusMessage(
+			`Transitioning into ${parentNode.name}: ${Math.round(nextProgress * 100)}%. Midway is locked; keep scrolling to complete or reverse.`
+		);
+	}
+
+	// Node click behavior:
+	// - Every node click recenters that node and dims non-selected nodes.
+	// - Parent nodes can then be expanded via wheel-scroll while hovered/selected.
 	function handleNodeClick(node) {
-		if (isZooming) {
+		const isMidTransition =
+			Boolean(parentScrollTransition) &&
+			parentScrollTransition.progress > 0 &&
+			parentScrollTransition.progress < 1;
+
+		if (isZooming || isMidTransition) {
 			return;
 		}
 
 		const childCount = node.nodeChildren.length;
+		setParentScrollTransition(null);
+		setSelectedNode(node);
+		setLeafFocusNodeId(childCount === 0 ? node.id : null);
+		setCamera({
+			tx: NODE_FOCUS_TARGET_X - node.position.x,
+			ty: NODE_FOCUS_TARGET_Y - node.position.y,
+			scale: 1,
+		});
 
 		if (childCount > 0) {
-			setSelectedNode(null);
-			setHoveredNode(null);
-			setLeafFocusNodeId(null);
-			setStatusMessage(`Zooming into ${node.name} (${childCount} child nodes)...`);
-			setCamera({
-				tx: 50 - node.position.x,
-				ty: 50 - node.position.y,
-				scale: 2.15,
-			});
-
-			runZoomTransition(() => {
-				setNodeStack((previousStack) => [...previousStack, node.nodeChildren]);
-				setPathStack((previousPath) => [...previousPath, node.name]);
-				setStatusMessage(
-					`Viewing ${node.name}. ${childCount} child node${childCount === 1 ? "" : "s"} loaded.`
-				);
-			});
+			setStatusMessage(
+				`${node.name} centered. Keep the cursor on this parent node and scroll up to zoom into children.`
+			);
 			return;
 		}
 
-		setSelectedNode(node);
-
-		setLeafFocusNodeId(node.id);
-		setCamera({
-			tx: LEAF_FOCUS_TARGET_X - node.position.x,
-			ty: LEAF_FOCUS_TARGET_Y - node.position.y,
-			scale: LEAF_FOCUS_SCALE,
-		});
-
-		setStatusMessage(
-			`${node.name} focused. Leaf node is highlighted while details are shown.`
-		);
+		setStatusMessage(`${node.name} centered. Leaf node remains focused until canvas is clicked.`);
 	}
 
+	function handleCanvasWheel(event) {
+		if (isZooming) {
+			return;
+		}
+
+		const progressStep = computeProgressStep(event.deltaY);
+		const direction = event.deltaY < 0 ? 1 : -1;
+		const isScrollIn = direction > 0;
+
+		if (parentScrollTransition) {
+			event.preventDefault();
+			advanceParentTransition(parentScrollTransition.parentNode, direction, progressStep);
+			return;
+		}
+
+		if (isScrollIn && isScrollStopGapActive()) {
+			event.preventDefault();
+			setStatusMessage("Scroll stop-gap active. Move mouse to re-arm before scrolling into a parent node again.");
+			return;
+		}
+
+		if (direction < 0 && nodeStack.length > 1) {
+			event.preventDefault();
+			handleZoomOut();
+			return;
+		}
+
+		if (direction < 0) {
+			return;
+		}
+
+		const hoveredParent =
+			hoveredNode && hoveredNode.nodeChildren.length > 0 ? hoveredNode : null;
+		const selectedParent =
+			selectedNode && selectedNode.nodeChildren.length > 0 ? selectedNode : null;
+		const zoomCandidate = hoveredParent || selectedParent;
+
+		if (!zoomCandidate) {
+			return;
+		}
+
+		const candidateIsVisible = activeNodes.some((node) => node.id === zoomCandidate.id);
+		if (!candidateIsVisible) {
+			return;
+		}
+
+		event.preventDefault();
+		setSelectedNode(zoomCandidate);
+		setHoveredNode(null);
+		setLeafFocusNodeId(null);
+		setCamera({
+			tx: NODE_FOCUS_TARGET_X - zoomCandidate.position.x,
+			ty: NODE_FOCUS_TARGET_Y - zoomCandidate.position.y,
+			scale: 1,
+		});
+		advanceParentTransition(zoomCandidate, direction, progressStep);
+	}
+
+	// Clicking empty canvas clears selection and camera focus.
 	function handleCanvasClick() {
 		if (isZooming) {
 			return;
 		}
 
+		scrollStopGapRef.current.requireReposition = false;
+		setParentScrollTransition(null);
 		setSelectedNode(null);
 		setHoveredNode(null);
 		setLeafFocusNodeId(null);
 		setCamera({ tx: 0, ty: 0, scale: 1 });
-		setStatusMessage("Selection cleared.");
+		setStatusMessage("Selection cleared. Canvas returned to its original position.");
 	}
 
+	// Zoom out one level in the hierarchy.
 	function handleZoomOut() {
-		if (isZooming || nodeStack.length <= 1) {
+		if (isZooming || nodeStack.length <= 1 || parentScrollTransition) {
 			return;
 		}
 
+		scrollStopGapRef.current.requireReposition = false;
 		setSelectedNode(null);
 		setHoveredNode(null);
 		setLeafFocusNodeId(null);
@@ -281,13 +492,38 @@ function App() {
 
 		runZoomTransition(() => {
 			setNodeStack((previousStack) => previousStack.slice(0, -1));
+			setBackgroundStack((previousStack) => previousStack.slice(0, -1));
 			setPathStack((previousPath) => previousPath.slice(0, -1));
 			setStatusMessage("Returned to parent cluster.");
 		});
 	}
 
-	const layerTransform = `translate(${camera.tx}%, ${camera.ty}%) scale(${camera.scale})`;
+	// 4.4 - Derived UI values for rendering.
+	const transitionProgress = parentScrollTransition ? parentScrollTransition.progress : 0;
+	const isParentTransitionActive = Boolean(parentScrollTransition);
+	const isMidParentTransitionActive =
+		isParentTransitionActive && transitionProgress > 0 && transitionProgress < 1;
+	const interactionLocked = isZooming || isMidParentTransitionActive;
+	const effectiveCamera = useMemo(() => {
+		if (!parentScrollTransition) {
+			return camera;
+		}
+
+		const centeredTx = NODE_FOCUS_TARGET_X - parentScrollTransition.parentNode.position.x;
+		const centeredTy = NODE_FOCUS_TARGET_Y - parentScrollTransition.parentNode.position.y;
+		const remainingBlend = 1 - parentScrollTransition.progress;
+
+		return {
+			tx: centeredTx * remainingBlend,
+			ty: centeredTy * remainingBlend,
+			scale: 1,
+		};
+	}, [camera, parentScrollTransition]);
+	const layerTransform = `translate(${effectiveCamera.tx}%, ${effectiveCamera.ty}%) scale(${effectiveCamera.scale})`;
 	const canZoomOut = nodeStack.length > 1;
+	const activeClusterBackground = backgroundStack[backgroundStack.length - 1] || "";
+	const transitionParentNode = parentScrollTransition ? parentScrollTransition.parentNode : null;
+	const transitionBackground = transitionParentNode ? transitionParentNode.zoomedBackground : "";
 	const selectedNodeHasImage = Boolean(activeInfoNode && activeInfoNode.nodeImage);
 	const showSelectedImage = selectedNodeHasImage && imageLoadState !== "error";
 	const responsiveNodeScale = useMemo(() => {
@@ -305,10 +541,11 @@ function App() {
 		}),
 		[responsiveNodeScale, responsiveUiScale]
 	);
-	const dimmingReferenceNode =
-		hoveredNode || (selectedNode && selectedNode.nodeChildren.length === 0 ? selectedNode : null);
-	const isHoverDimmingActive = Boolean(dimmingReferenceNode);
+	// Dimming is click-driven only, so hover keeps the rest of the screen unchanged.
+	const dimmingReferenceNode = selectedNode;
+	const isSelectionDimmingActive = Boolean(dimmingReferenceNode);
 	const isLeafFocusActive = Boolean(leafFocusNodeId);
+	const isNodeCenterFocusActive = Boolean(selectedNode) && !isParentTransitionActive;
 	const panelWidth = useMemo(() => {
 		if (viewportSize.width <= 640) {
 			return Math.min(320, Math.max(220, viewportSize.width - 24));
@@ -325,26 +562,124 @@ function App() {
 		}),
 		[panelWidth, viewportSize.width]
 	);
+	const transitionLayerStyle = useMemo(
+		() => ({
+			transform: layerTransform,
+			"--transition-progress": transitionProgress.toFixed(3),
+		}),
+		[layerTransform, transitionProgress]
+	);
+
+	// 4.5 - Render.
 	return (
 		<div className="app-shell" style={appScaleStyle}>
 			<h1 className="canvas-title">Star Canvas</h1>
 
 			{canZoomOut ? (
-				<button type="button" className="cluster-back" onClick={handleZoomOut}>
+				<button
+					type="button"
+					className="cluster-back"
+					onClick={handleZoomOut}
+					disabled={interactionLocked}
+				>
 					Back to Parent
 				</button>
 			) : null}
 
-			<main className="star-canvas" aria-label="Historical Star Canvas" onClick={handleCanvasClick}>
+			<main
+				className="star-canvas"
+				aria-label="Historical Star Canvas"
+				onClick={handleCanvasClick}
+				onMouseMove={handleCanvasMouseMove}
+				onWheel={handleCanvasWheel}
+			>
+				{activeClusterBackground ? (
+					<div
+						className={`cluster-background${isParentTransitionActive ? " is-parent-transitioning" : ""}`}
+						style={{ transform: layerTransform }}
+						aria-hidden="true"
+					>
+						<img
+							className="cluster-background-image"
+							src={activeClusterBackground}
+							alt=""
+						/>
+					</div>
+				) : null}
+
+				{isParentTransitionActive ? (
+					<div className="parent-transition-layer" style={transitionLayerStyle} aria-hidden="true">
+						{transitionBackground ? (
+							<div className="cluster-background transition-cluster-background">
+								<img
+									className="cluster-background-image transition-cluster-background-image"
+									src={transitionBackground}
+									alt=""
+								/>
+							</div>
+						) : null}
+
+						<div className="parent-transition-children">
+							{transitionParentNode.nodeChildren.map((node) => {
+								const haloCount = getHaloCount(node.nodeSize);
+
+								return (
+									<div
+										key={`transition-${node.id}`}
+										className="star-node transition-child-node"
+										style={{
+											left: `${node.position.x}%`,
+											top: `${node.position.y}%`,
+											"--node-size": node.nodeSize,
+											"--node-luminosity": node.nodeLuminosity,
+											"--halo-opacity-multiplier": 1,
+										}}
+									>
+										<span className="star-halo" aria-hidden="true">
+											{Array.from({ length: haloCount }).map((_, index) => (
+												<span
+													key={`transition-${node.id}-halo-${index}`}
+													className="star-halo-ring"
+													style={{
+														"--ring-scale": String(1.45 + index * 0.34),
+														"--ring-opacity": String(Math.max(0.14, 0.34 - index * 0.05)),
+														"--ring-blur": `${2 + index * 1.5}`,
+														"--ring-delay": `${index * 130}ms`,
+													}}
+												/>
+											))}
+										</span>
+									</div>
+								);
+							})}
+						</div>
+					</div>
+				) : null}
+
 				{activeNodes.length > 0 ? (
-					<div className="node-layer" style={{ transform: layerTransform }}>
+					<div
+						className={`node-layer${interactionLocked ? " is-interaction-locked" : ""}${isParentTransitionActive ? " is-parent-transitioning" : ""}`}
+						style={{
+							transform: layerTransform,
+							opacity: isParentTransitionActive ? 1 - transitionProgress * 0.88 : 1,
+						}}
+					>
 						{activeNodes.map((node) => {
+							// Node classes and CSS variables are derived from interaction state.
 							const childCount = node.nodeChildren.length;
 							const hasChildrenClass = childCount > 0 ? " has-children" : "";
-							const isDimmedByHover =
-								isHoverDimmingActive && dimmingReferenceNode.id !== node.id;
+							const isDimmedBySelection =
+								isSelectionDimmingActive && dimmingReferenceNode.id !== node.id;
+							const isParentZoomingNode =
+								isParentTransitionActive &&
+								dimmingReferenceNode &&
+								dimmingReferenceNode.id === node.id &&
+								childCount > 0;
 							const isLeafFocusedNode = leafFocusNodeId === node.id;
-							const dimmedClass = isDimmedByHover ? " is-dimmed" : "";
+							const dimmedClass = isDimmedBySelection ? " is-dimmed" : "";
+							const selectedClass =
+								dimmingReferenceNode && dimmingReferenceNode.id === node.id ? " is-selected" : "";
+							const parentZoomingClass = isParentZoomingNode ? " is-parent-zooming" : "";
 							const focusedClass = isLeafFocusedNode ? " is-leaf-focused" : "";
 							const haloCount = getHaloCount(node.nodeSize);
 
@@ -352,35 +687,52 @@ function App() {
 								<button
 									key={node.id}
 									type="button"
-									className={`star-node${hasChildrenClass}${dimmedClass}${focusedClass}`}
+									className={`star-node${hasChildrenClass}${dimmedClass}${selectedClass}${parentZoomingClass}${focusedClass}`}
 									aria-label={node.name}
+									disabled={interactionLocked}
 									onClick={(event) => {
 										event.stopPropagation();
 										handleNodeClick(node);
 									}}
-									onMouseEnter={() => setHoveredNode(node)}
-									onMouseLeave={() => {
-										setHoveredNode((previousNode) =>
-											previousNode && previousNode.id === node.id ? null : previousNode
-										);
+									onMouseEnter={() => {
+										if (!interactionLocked) {
+											setHoveredNode(node);
+										}
 									}}
-									onFocus={() => setHoveredNode(node)}
+									onMouseLeave={() => {
+										if (!interactionLocked) {
+											setHoveredNode((previousNode) =>
+												previousNode && previousNode.id === node.id ? null : previousNode
+											);
+										}
+									}}
+									onFocus={() => {
+										if (!interactionLocked) {
+											setHoveredNode(node);
+										}
+									}}
 									onBlur={() => {
-										setHoveredNode((previousNode) =>
-											previousNode && previousNode.id === node.id ? null : previousNode
-										);
+										if (!interactionLocked) {
+											setHoveredNode((previousNode) =>
+												previousNode && previousNode.id === node.id ? null : previousNode
+											);
+										}
 									}}
 									style={{
 										left: `${node.position.x}%`,
 										top: `${node.position.y}%`,
 										"--node-size": node.nodeSize,
-										"--node-luminosity": isDimmedByHover
+										// Dim only non-target nodes while preserving each node's base luminosity.
+										"--node-luminosity": isDimmedBySelection
+											|| isParentZoomingNode
 											? DIMMED_NODE_LUMINOSITY
 											: node.nodeLuminosity,
-										"--halo-opacity-multiplier": isDimmedByHover ? 0.62 : 1,
+										"--halo-opacity-multiplier":
+											isDimmedBySelection || isParentZoomingNode ? 0.62 : 1,
 									}}
 								>
 									<span className="star-halo" aria-hidden="true">
+										{/* Render layered halo rings for a more dynamic star glow. */}
 										{Array.from({ length: haloCount }).map((_, index) => (
 											<span
 												key={`${node.id}-halo-${index}`}
@@ -451,6 +803,11 @@ function App() {
 				{isLeafFocusActive ? (
 					<p className="leaf-return-hint">
 						Leaf node focused. Click anywhere on empty canvas to return.
+					</p>
+				) : null}
+				{!isLeafFocusActive && isNodeCenterFocusActive ? (
+					<p className="leaf-return-hint">
+						Node centered. Click empty canvas to reset camera.
 					</p>
 				) : null}
 				{warningMessage ? <p className="warning-note">{warningMessage}</p> : null}

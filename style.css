@@ -33,6 +33,60 @@ body {
 	background: #000;
 }
 
+.cluster-background {
+	position: absolute;
+	inset: 0;
+	z-index: 1;
+	pointer-events: none;
+	overflow: hidden;
+	background: #000;
+	transform-origin: 50% 50%;
+	transition: transform 760ms cubic-bezier(0.22, 0.9, 0.32, 1);
+	will-change: transform;
+}
+
+.cluster-background.is-parent-transitioning {
+	transition: transform 120ms linear;
+}
+
+.cluster-background-image {
+	display: block;
+	width: 100%;
+	height: 100%;
+	object-fit: contain;
+	object-position: center;
+	background: #000;
+	filter: brightness(1.02) contrast(1.08);
+	mix-blend-mode: normal;
+	opacity: 0.92;
+}
+
+.parent-transition-layer {
+	--transition-progress: 0;
+	position: absolute;
+	inset: 0;
+	z-index: 3;
+	pointer-events: none;
+	transform-origin: 50% 50%;
+	transition: transform 120ms linear;
+	will-change: transform;
+}
+
+.transition-cluster-background {
+	opacity: var(--transition-progress);
+}
+
+.transition-cluster-background-image {
+	opacity: calc(0.08 + var(--transition-progress) * 0.92);
+}
+
+.parent-transition-children {
+	position: absolute;
+	inset: 0;
+	z-index: 2;
+	pointer-events: none;
+}
+
 .canvas-title {
 	position: absolute;
 	left: 50%;
@@ -56,13 +110,24 @@ body {
 .node-layer {
 	position: absolute;
 	inset: 0;
-	transition: transform 520ms cubic-bezier(0.22, 0.9, 0.32, 1);
+	z-index: 2;
+	transform-origin: 50% 50%;
+	transition: transform 760ms cubic-bezier(0.22, 0.9, 0.32, 1);
 	will-change: transform;
+}
+
+.node-layer.is-parent-transitioning {
+	transition: transform 120ms linear;
+}
+
+.node-layer.is-interaction-locked .star-node {
+	pointer-events: none;
 }
 
 .star-node {
 	--node-size: 18;
-	--effective-node-size: calc(var(--node-size) * var(--node-scale));
+	--child-size-multiplier: 1;
+	--effective-node-size: calc(var(--node-size) * var(--node-scale) * var(--child-size-multiplier));
 	--node-luminosity: 1;
 	--halo-opacity-multiplier: 1;
 	position: absolute;
@@ -104,6 +169,34 @@ body {
 
 .star-node.is-leaf-focused {
 	z-index: 6;
+}
+
+.star-node.is-selected {
+	z-index: 7;
+	transform: translate(-50%, -50%) scale(1.14);
+	box-shadow:
+		0 0 calc(10px + var(--effective-node-size) * 0.34px)
+			rgba(255, 247, 219, calc(0.6 + var(--node-luminosity) * 0.35)),
+		0 0 calc(24px + var(--effective-node-size) * 1.1px)
+			rgba(255, 228, 171, calc(0.36 + var(--node-luminosity) * 0.3)),
+		0 0 calc(40px + var(--effective-node-size) * 1.9px)
+			rgba(255, 208, 133, calc(0.2 + var(--node-luminosity) * 0.24));
+}
+
+.star-node.is-parent-zooming {
+	opacity: 0.58;
+	filter: brightness(0.74) saturate(0.72);
+}
+
+.transition-child-node {
+	cursor: default;
+	opacity: var(--transition-progress);
+	transform: translate(-50%, -50%) scale(calc(0.54 + var(--transition-progress) * 0.46));
+	filter: brightness(calc(0.36 + var(--transition-progress) * 0.64));
+}
+
+.transition-child-node .star-halo-ring {
+	opacity: calc(var(--transition-progress) * var(--ring-opacity));
 }
 
 .star-halo {
@@ -233,6 +326,13 @@ body {
 .cluster-back:focus-visible {
 	background: rgba(14, 14, 14, 0.94);
 	border-color: rgba(255, 255, 255, 0.58);
+}
+
+.cluster-back:disabled {
+	opacity: 0.45;
+	cursor: not-allowed;
+	background: rgba(6, 6, 6, 0.78);
+	border-color: rgba(255, 255, 255, 0.2);
 }
 
 .status-screen {
