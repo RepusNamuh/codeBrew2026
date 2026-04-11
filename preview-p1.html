@@ -1,0 +1,1115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Stellar Stories — Melbourne's Living Map of Memory</title>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root { --bg-primary: #000; }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body, #app { width: 100%; height: 100%; margin: 0; }
+    body { background: #000; color: #fff; font-family: 'Space Grotesk', 'Segoe UI', sans-serif; }
+
+    .app-shell {
+      --node-scale: 1; --ui-scale: 1;
+      --detail-panel-width: 440px;
+      --detail-panel-gap: 16px;
+      --detail-panel-safe-right: calc(var(--detail-panel-width) + var(--detail-panel-gap));
+      position: relative; width: 100%; height: 100%; background: radial-gradient(ellipse at 50% 45%, #0d1321 0%, #070a14 60%, #030508 100%); overflow: hidden;
+    }
+
+    /* WELCOME OVERLAY */
+    .welcome-overlay {
+      position: fixed; inset: 0; z-index: 100;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      background: radial-gradient(ellipse at 50% 45%, #0d1321 0%, #070a14 60%, #030508 100%);
+      transition: opacity 1s ease, visibility 1s ease;
+    }
+    .welcome-overlay.hidden { opacity: 0; visibility: hidden; pointer-events: none; }
+    .welcome-title {
+      font-size: clamp(2.5rem, 6vw, 5rem); font-weight: 700;
+      letter-spacing: 0.1em; text-transform: uppercase;
+      color: rgba(255,245,214,0.98);
+      text-shadow: 0 0 40px rgba(255,219,149,0.4), 0 0 80px rgba(255,200,100,0.2);
+      margin-bottom: 8px;
+    }
+    .welcome-subtitle {
+      font-size: clamp(1rem, 2vw, 1.4rem); color: rgba(255,255,255,0.6);
+      letter-spacing: 0.15em; text-transform: uppercase; margin-bottom: 24px;
+    }
+    .welcome-desc {
+      max-width: 560px; text-align: center; font-size: 15px;
+      line-height: 1.7; color: rgba(255,255,255,0.5); margin-bottom: 40px;
+    }
+    .welcome-enter {
+      padding: 14px 36px; border: 1px solid rgba(255,219,149,0.4);
+      background: rgba(255,219,149,0.08); color: rgba(255,245,214,0.95);
+      font-size: 16px; font-family: inherit; letter-spacing: 0.08em;
+      border-radius: 999px; cursor: pointer;
+      transition: all 0.3s ease;
+    }
+    .welcome-enter:hover {
+      background: rgba(255,219,149,0.18); border-color: rgba(255,219,149,0.7);
+      box-shadow: 0 0 30px rgba(255,219,149,0.15);
+    }
+
+    /* STAR CANVAS */
+    .star-canvas {
+      position: absolute; inset: 0; overflow: hidden; background: radial-gradient(ellipse at 50% 45%, #0d1321 0%, #070a14 60%, #030508 100%);
+      cursor: crosshair;
+    }
+
+    #particles-canvas {
+      position: absolute; inset: 0; z-index: 1; pointer-events: none;
+    }
+
+    .canvas-bg-image {
+      position: absolute; inset: 0; z-index: 0; pointer-events: none;
+      opacity: 0;
+      transition: opacity 760ms cubic-bezier(0.22, 0.9, 0.32, 1);
+    }
+    .canvas-bg-image img {
+      display: block; width: 100%; height: 100%; object-fit: cover; opacity: 0.85;
+    }
+    .canvas-bg-image.visible { opacity: 0.15; }
+
+    .node-layer {
+      position: absolute; inset: 0; z-index: 2; transform-origin: 50% 50%;
+      transform: translate(0%, 0%) scale(1);
+      transition: transform 760ms cubic-bezier(0.22, 0.9, 0.32, 1), opacity 760ms cubic-bezier(0.22, 0.9, 0.32, 1);
+      will-change: transform, opacity;
+    }
+
+    .node-layer.era-view {
+      transform: scale(1.6);
+    }
+
+    .star-node {
+      --node-size: 18;
+      --node-luminosity: 1;
+      --star-color: #FFD984;
+      --twinkle-duration: 3s;
+      --effective-node-size: calc(var(--node-size) * var(--node-scale) * 0.55px);
+      position: absolute; overflow: visible;
+      width: var(--effective-node-size); height: var(--effective-node-size);
+      border: 0; border-radius: 50%; cursor: pointer; padding: 0; opacity: 1;
+      transform: translate(-50%, -50%) scale(1);
+      transition: transform 180ms ease, box-shadow 180ms ease, filter 180ms ease, opacity 180ms ease;
+      background: radial-gradient(
+        circle at 35% 35%,
+        rgba(255,255,255,1) 0%,
+        color-mix(in srgb, var(--star-color) 40%, white) 30%,
+        var(--star-color) 65%,
+        color-mix(in srgb, var(--star-color) 60%, transparent) 100%
+      );
+      box-shadow:
+        0 0 calc(4px + var(--node-size)*0.2px) color-mix(in srgb, var(--star-color) 65%, rgba(255,236,192,0.5)),
+        0 0 calc(10px + var(--node-size)*0.5px) color-mix(in srgb, var(--star-color) 50%, rgba(255,215,128,0.3)),
+        0 0 calc(18px + var(--node-size)*0.9px) color-mix(in srgb, var(--star-color) 40%, rgba(255,200,120,0.12));
+      animation: star-twinkle var(--twinkle-duration) ease-in-out infinite;
+    }
+
+    @keyframes star-twinkle {
+      0%   { opacity: 1;    filter: brightness(1); }
+      25%  { opacity: 0.6;  filter: brightness(0.75); }
+      50%  { opacity: 1;    filter: brightness(1.15); }
+      75%  { opacity: 0.7;  filter: brightness(0.85); }
+      100% { opacity: 1;    filter: brightness(1); }
+    }
+
+    .star-node.is-dimmed {
+      opacity: 0.35; filter: brightness(0.65) saturate(0.55);
+      animation: none;
+    }
+    .star-node.is-dimmed .star-halo-ring {
+      animation-play-state: paused;
+    }
+
+    .star-node.is-selected {
+      z-index: 7; transform: translate(-50%, -50%) scale(1.3);
+      animation: none; opacity: 1; filter: brightness(1.2);
+    }
+
+    .star-node:hover {
+      transform: translate(-50%, -50%) scale(1.25);
+      filter: brightness(1.2);
+    }
+
+    .star-node:hover .star-label {
+      opacity: 1;
+    }
+
+    .star-halo {
+      position: absolute; inset: -2px; border-radius: 50%; pointer-events: none;
+      opacity: calc(0.3 + var(--node-luminosity) * 0.4);
+    }
+
+    .star-halo-ring {
+      position: absolute; inset: 0; border-radius: 50%;
+      border: 1px solid color-mix(in srgb, var(--star-color) 60%, rgba(255,226,166,0.4));
+      opacity: calc(0.35 + var(--node-luminosity) * 0.4);
+      animation: halo-breathe 3.2s ease-in-out infinite;
+    }
+
+    @keyframes halo-breathe {
+      0%, 100% { transform: scale(1); opacity: calc(0.25 + var(--node-luminosity) * 0.4); }
+      50% { transform: scale(1.2); opacity: calc(0.1 + var(--node-luminosity) * 0.15); }
+    }
+
+    .star-label {
+      position: absolute; top: -28px; left: 50%; transform: translateX(-50%);
+      white-space: nowrap; font-size: 11px; font-weight: 500;
+      color: rgba(255, 255, 255, 0.85);
+      text-shadow: 0 0 8px rgba(0, 0, 0, 0.8);
+      pointer-events: none; opacity: 0;
+      transition: opacity 140ms ease;
+      z-index: 10;
+    }
+
+    /* ERA BUTTONS */
+    .era-controls {
+      position: absolute; bottom: 24px; left: 50%; transform: translateX(-50%);
+      z-index: 50; display: flex; gap: 12px; flex-wrap: wrap;
+      justify-content: center; max-width: 90vw;
+      transition: opacity 400ms ease, left 400ms ease, right 400ms ease, transform 400ms ease;
+    }
+    .era-controls.hidden { opacity: 0; pointer-events: none; }
+
+    .app-shell.has-detail-open .era-controls {
+      left: 18px;
+      right: calc(var(--detail-panel-safe-right) + 18px);
+      transform: none;
+      max-width: none;
+    }
+
+    .era-btn,
+    .era-button {
+      padding: 8px 16px; border: 1px solid rgba(255,255,255,0.3);
+      background: rgba(255,255,255,0.05); color: rgba(255,255,255,0.8);
+      font-size: 12px; font-weight: 600; font-family: inherit;
+      border-radius: 4px; cursor: pointer;
+      transition: all 200ms ease;
+    }
+    .era-btn:hover,
+    .era-button:hover {
+      background: rgba(255,255,255,0.12); border-color: rgba(255,255,255,0.6);
+    }
+    .era-btn.is-dimmed,
+    .era-button.is-dimmed {
+      opacity: 0.35;
+      filter: brightness(0.65) saturate(0.6);
+    }
+
+    /* BACK BUTTON */
+    .back-btn {
+      position: absolute; top: 20px; right: 20px; z-index: 50;
+      padding: 8px 16px; border: 1px solid rgba(255,255,255,0.3);
+      background: rgba(255,255,255,0.05); color: rgba(255,255,255,0.8);
+      font-size: 14px; font-family: inherit;
+      border-radius: 4px; cursor: pointer;
+      transition: all 200ms ease;
+      opacity: 0; pointer-events: none;
+    }
+    .back-btn.visible {
+      opacity: 1; pointer-events: auto;
+    }
+    .back-btn:hover {
+      background: rgba(255,255,255,0.12); border-color: rgba(255,255,255,0.6);
+    }
+
+    /* DETAIL PANEL */
+    .detail-panel {
+      position: fixed; right: 0; top: 0; bottom: 0;
+      width: var(--detail-panel-width);
+      max-width: min(96vw, 560px);
+      background: rgba(10,10,20,0.95); backdrop-filter: blur(8px);
+      z-index: 60; padding: 32px;
+      overflow-y: auto;
+      transform: translateX(100%);
+      transition: transform 400ms cubic-bezier(0.22, 0.9, 0.32, 1);
+      border-left: 1px solid rgba(255,255,255,0.1);
+    }
+    .detail-panel.visible { transform: translateX(0); }
+
+    .detail-close-zone {
+      position: fixed; inset: 0; z-index: 1;
+      opacity: 0; pointer-events: none;
+      transition: pointer-events 400ms ease;
+    }
+    .detail-close-zone.active {
+      opacity: 1; pointer-events: auto;
+    }
+
+    .detail-name { font-size: 28px; font-weight: 700; margin-bottom: 12px; }
+    .detail-year { font-size: 14px; color: rgba(255,219,149,0.9); font-weight: 600; margin-bottom: 16px; }
+
+    .detail-eras {  
+      display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 24px;
+    }
+    .era-badge {
+      padding: 4px 12px; border-radius: 999px; font-size: 12px; font-weight: 600;
+      color: white; background: rgba(255,255,255,0.15);
+    }
+
+    .detail-image {
+      width: 100%; aspect-ratio: 4/3; background: rgba(255,255,255,0.05);
+      border-radius: 8px; margin-bottom: 24px; overflow: hidden;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .detail-image img {
+      width: 100%; height: 100%; object-fit: cover;
+    }
+    .detail-image.loading::after {
+      content: "Loading..."; color: rgba(255,255,255,0.5); font-size: 14px;
+    }
+
+    .detail-story {
+      font-size: 15px; line-height: 1.8; color: rgba(255,255,255,0.75);
+    }
+
+    /* CONSTELLATION LINES SVG */
+    .constellation-lines {
+      position: absolute; left: 0; top: 0; width: 100%; height: 100%;
+      z-index: 1; pointer-events: none; overflow: visible;
+    }
+    .constellation-line-glow {
+      stroke-linecap: round;
+      opacity: 0;
+      animation: line-draw-glow var(--draw-duration, 800ms) ease forwards;
+      animation-delay: var(--draw-delay, 0ms);
+    }
+    .constellation-line-core {
+      stroke-linecap: round;
+      stroke-dashoffset: var(--line-len, 100);
+      stroke-dasharray: var(--line-len, 100);
+      animation: line-draw var(--draw-duration, 800ms) ease forwards;
+      animation-delay: var(--draw-delay, 0ms);
+    }
+    @keyframes line-draw {
+      from { stroke-dashoffset: var(--line-len, 100); opacity: 0.3; }
+      to   { stroke-dashoffset: 0; opacity: 0.6; }
+    }
+    @keyframes line-draw-glow {
+      from { opacity: 0; }
+      to   { opacity: 0.18; }
+    }
+
+    /* ADD STAR BUTTON */
+    .add-star-btn {
+      position: absolute; top: 20px; left: 20px; z-index: 50;
+      padding: 8px 16px; border: 1px solid rgba(255,219,149,0.4);
+      background: rgba(255,219,149,0.08); color: rgba(255,245,214,0.95);
+      font-size: 13px; font-family: inherit; letter-spacing: 0.04em;
+      border-radius: 4px; cursor: pointer;
+      transition: all 200ms ease;
+    }
+    .add-star-btn:hover {
+      background: rgba(255,219,149,0.18); border-color: rgba(255,219,149,0.7);
+      box-shadow: 0 0 20px rgba(255,219,149,0.12);
+    }
+
+    /* ADD STAR FORM MODAL */
+    .add-star-overlay {
+      position: fixed; inset: 0; z-index: 80;
+      background: rgba(0,0,0,0.7); backdrop-filter: blur(4px);
+      display: flex; align-items: center; justify-content: center;
+      opacity: 0; visibility: hidden;
+      transition: opacity 300ms ease, visibility 300ms ease;
+    }
+    .add-star-overlay.visible { opacity: 1; visibility: visible; }
+
+    .add-star-form {
+      width: 440px; max-width: 92vw; max-height: 85vh; overflow-y: auto;
+      background: rgba(12,14,28,0.97); border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 12px; padding: 28px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+    }
+    .add-star-form h2 {
+      font-size: 22px; font-weight: 700; margin-bottom: 20px;
+      color: rgba(255,245,214,0.95);
+    }
+    .form-group {
+      margin-bottom: 14px;
+    }
+    .form-group label {
+      display: block; font-size: 12px; font-weight: 600; color: rgba(255,255,255,0.6);
+      margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.06em;
+    }
+    .form-group input, .form-group textarea, .form-group select {
+      width: 100%; padding: 8px 12px; border: 1px solid rgba(255,255,255,0.15);
+      background: rgba(255,255,255,0.05); color: #fff;
+      font-size: 14px; font-family: inherit; border-radius: 6px;
+      transition: border-color 200ms ease;
+    }
+    .form-group input:focus, .form-group textarea:focus, .form-group select:focus {
+      outline: none; border-color: rgba(255,219,149,0.5);
+    }
+    .form-group textarea { min-height: 80px; resize: vertical; }
+    .form-row { display: flex; gap: 12px; }
+    .form-row .form-group { flex: 1; }
+    .form-actions {
+      display: flex; gap: 10px; margin-top: 20px; justify-content: flex-end;
+    }
+    .form-cancel {
+      padding: 8px 18px; border: 1px solid rgba(255,255,255,0.2);
+      background: transparent; color: rgba(255,255,255,0.7);
+      font-size: 13px; font-family: inherit; border-radius: 6px; cursor: pointer;
+      transition: all 200ms ease;
+    }
+    .form-cancel:hover { background: rgba(255,255,255,0.08); }
+    .form-submit {
+      padding: 8px 22px; border: 1px solid rgba(255,219,149,0.5);
+      background: rgba(255,219,149,0.12); color: rgba(255,245,214,0.95);
+      font-size: 13px; font-weight: 600; font-family: inherit; border-radius: 6px; cursor: pointer;
+      transition: all 200ms ease;
+    }
+    .form-submit:hover {
+      background: rgba(255,219,149,0.25); border-color: rgba(255,219,149,0.8);
+    }
+
+    /* ERA INTRO OVERLAY */
+    .era-intro {
+      position: absolute; left: 0; right: 0; top: 0;
+      z-index: 40; pointer-events: none;
+      display: flex; flex-direction: column; align-items: center;
+      padding-top: 10vh;
+    }
+    .era-intro-title {
+      font-size: clamp(1.8rem, 4vw, 3.2rem); font-weight: 700;
+      letter-spacing: 0.1em; text-transform: uppercase;
+      text-shadow: 0 0 30px var(--era-glow, rgba(255,219,149,0.4));
+      margin-bottom: 16px;
+      opacity: 0;
+      animation: era-title-in 1s ease forwards;
+    }
+    @keyframes era-title-in {
+      from { opacity: 0; transform: translateY(12px) scale(0.95); letter-spacing: 0.25em; }
+      to   { opacity: 1; transform: translateY(0) scale(1); letter-spacing: 0.1em; }
+    }
+    .era-intro-text {
+      max-width: 560px; text-align: center;
+      font-size: 14px; line-height: 1.9;
+      color: rgba(255,255,255,0);
+      padding: 0 20px;
+    }
+    .era-intro-text .intro-word {
+      display: inline;
+      opacity: 0;
+      animation: word-appear 0.4s ease forwards;
+      color: rgba(255,255,255,0.7);
+    }
+    @keyframes word-appear {
+      from { opacity: 0; filter: blur(4px); }
+      to   { opacity: 1; filter: blur(0); }
+    }
+
+    /* Sparkle particles around the intro text */
+    .era-sparkles {
+      position: absolute; top: 6vh; left: 50%; transform: translateX(-50%);
+      width: 620px; height: 260px; max-width: 96vw;
+      pointer-events: none; z-index: 39; overflow: visible;
+    }
+    .sparkle {
+      position: absolute; width: 3px; height: 3px; border-radius: 50%;
+      background: white;
+      opacity: 0;
+      animation: sparkle-float var(--sparkle-dur, 2.5s) ease-in-out var(--sparkle-delay, 0s) forwards;
+    }
+    @keyframes sparkle-float {
+      0%   { opacity: 0; transform: scale(0) translateY(0); }
+      20%  { opacity: 0.9; transform: scale(1) translateY(-6px); }
+      60%  { opacity: 0.6; transform: scale(0.8) translateY(-18px); }
+      100% { opacity: 0; transform: scale(0) translateY(-30px); }
+    }
+
+    /* NEW STAR ANIMATION */
+    .star-node.is-new {
+      animation: new-star-burst 1.5s ease forwards;
+    }
+    @keyframes new-star-burst {
+      0% { opacity: 0; transform: translate(-50%, -50%) scale(0); box-shadow: 0 0 60px rgba(255,255,255,0.9), 0 0 120px rgba(255,215,128,0.5); }
+      30% { opacity: 1; transform: translate(-50%, -50%) scale(2); }
+      60% { transform: translate(-50%, -50%) scale(0.9); }
+      100% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+    }
+
+    @media (max-width: 768px) {
+      .detail-panel { padding: 24px; }
+      .era-controls { bottom: 16px; gap: 8px; }
+      .app-shell.has-detail-open .era-controls {
+        left: 12px;
+        right: calc(var(--detail-panel-safe-right) + 12px);
+      }
+      .era-btn, .era-button { padding: 6px 12px; font-size: 11px; }
+      .add-star-form { padding: 20px; }
+    }
+  </style>
+</head>
+<body>
+  <div id="app"></div>
+
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <script type="text/babel">
+    const { useState, useEffect, useRef } = React;
+
+    const LANDMARKS = [
+      { id: "old_melbourne_gaol", name: "Old Melbourne Gaol", year: 1845, lat: -37.8076, lng: 144.9655, constellation: ["gold_rush", "civic_identity"], significance: 2, story: "Before Melbourne learned to celebrate its ambitions, it first had to contain its unrest. Old Melbourne Gaol remains a stark reminder that the early city was shaped as much by discipline and fear as by promise and opportunity.", imageUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/3/36/Old_Melbourne_Gaol_aerial_1922_%28cropped%29.jpg/1280px-Old_Melbourne_Gaol_aerial_1922_%28cropped%29.jpg" },
+      { id: "parliament_house", name: "Parliament House", year: 1856, lat: -37.811, lng: 144.9737, constellation: ["gold_rush", "civic_identity", "victorian_heritage"], significance: 4, story: "As gold transformed Melbourne from a settlement into a rising colonial capital, Parliament House became the stage on which wealth was translated into rules, authority, and public order.", imageUrl: "https://upload.wikimedia.org/wikipedia/commons/d/d9/Parliament_House_design_palsey_published_c1854_H18179_SLV.jpg" },
+      { id: "state_library_victoria", name: "State Library Victoria", year: 1856, lat: -37.8097, lng: 144.9653, constellation: ["civic_identity", "victorian_heritage", "arts_and_culture"], significance: 3, story: "Amid the noise of trade, ambition, and expansion, the library offered something quieter yet no less powerful: a belief that a city should also be built from learning, memory, and shared imagination.", imageUrl: "https://upload.wikimedia.org/wikipedia/commons/a/ac/FL15578297.jpg" },
+      { id: "old_treasury_building", name: "Old Treasury Building", year: 1862, lat: -37.8133, lng: 144.9753, constellation: ["gold_rush", "civic_identity", "victorian_heritage"], significance: 2, story: "Here, the fever of the gold rush was given ledgers, vaults, and calculation. The Old Treasury Building marks the moment when sudden fortune began to harden into the lasting machinery of a modern city.", imageUrl: "https://www.oldtreasurybuilding.org.au/wp-content/uploads/2022/06/SLV-H4252-OTB-with-terrace-c.1875-sm.jpg" },
+      { id: "melbourne_town_hall", name: "Melbourne Town Hall", year: 1870, lat: -37.8149, lng: 144.9661, constellation: ["civic_identity", "victorian_heritage", "everyday_life"], significance: 2, story: "Not every monument speaks through grandeur alone. Melbourne Town Hall carries the echoes of speeches, celebrations, arguments, and gatherings.", imageUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/6/63/Melbourne_Town_Hall_1910.jpg/500px-Melbourne_Town_Hall_1910.jpg" },
+      { id: "queen_victoria_market", name: "Queen Victoria Market", year: 1878, lat: -37.8076, lng: 144.9568, constellation: ["gold_rush", "everyday_life"], significance: 4, story: "If official buildings tell the story of power, the market tells the story of people. In its stalls and pathways linger the textures of ordinary Melbourne.", imageUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/1/18/Queen_Victoria_Market_1878.jpg/1280px-Queen_Victoria_Market_1878.jpg" },
+      { id: "royal_exhibition_building", name: "Royal Exhibition Building", year: 1880, lat: -37.8047, lng: 144.9717, constellation: ["victorian_heritage", "civic_identity"], significance: 4, story: "Few buildings express nineteenth-century confidence as boldly as this one. The Royal Exhibition Building announced Melbourne to the world.", imageUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/d/da/Prize_Design_for_the_Melbourne_International_Exhibition_Building.jpg/500px-Prize_Design_for_the_Melbourne_International_Exhibition_Building.jpg" },
+      { id: "coops_shot_tower", name: "Coop's Shot Tower", year: 1889, lat: -37.8102, lng: 144.9631, constellation: ["victorian_heritage", "industry_and_motion"], significance: 3, story: "Rising from Melbourne's industrial past, Coop's Shot Tower preserves a different kind of heritage—one forged in labour, production, and practical ingenuity.", imageUrl: "https://lh3.googleusercontent.com/proxy/T5UpmT-uSIVoGBBj6Pj2wnv3NJIOHn8ZH5QFxAZ3NEi9qqIJgdn1DWPehb6udpzqDEgv4Cu-ELUhv0R2tRwckgLEk6IfFw" },
+      { id: "st_pauls_cathedral", name: "St Paul's Cathedral", year: 1891, lat: -37.817, lng: 144.9677, constellation: ["victorian_heritage", "sacred_and_memory"], significance: 3, story: "Set against the motion of trams, crowds, and commerce, St Paul's Cathedral offers another tempo altogether.", imageUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/0/0a/St_Paul%27s_old._From_Francis_Bond%2C_Early_Christian_Architecture._Last_book_1913..jpg/960px-St_Paul%27s_old._From_Francis_Bond%2C_Early_Christian_Architecture._Last_book_1913..jpg" },
+      { id: "flinders_street_station", name: "Flinders Street Station", year: 1909, lat: -37.8183, lng: 144.9671, constellation: ["everyday_life", "industry_and_motion", "modern_identity"], significance: 5, story: "More than a station, Flinders Street is a choreography of arrivals and partings. Beneath its clocks, countless private moments have unfolded, turning everyday movement into one of Melbourne's most enduring collective memories.", imageUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/a/a5/Old_Flinders_Street_Station.jpg/500px-Old_Flinders_Street_Station.jpg" },
+      { id: "shrine_of_remembrance", name: "Shrine of Remembrance", year: 1934, lat: -37.8305, lng: 144.9734, constellation: ["sacred_and_memory", "modern_identity"], significance: 4, story: "The Shrine does not ask the city to stop, but to remember. In its solemn geometry lives a space where grief, gratitude, sacrifice, and national identity are gathered into quiet permanence.", imageUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/1/11/Shrine_of_Remembrance_1930.jpg/960px-Shrine_of_Remembrance_1930.jpg" },
+      { id: "ngv_international", name: "NGV International", year: 1968, lat: -37.8226, lng: 144.9689, constellation: ["arts_and_culture", "modern_identity"], significance: 3, story: "With NGV International, Melbourne's cultural horizon widened beyond commerce and administration.", imageUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/0/01/National_Gallery_of_Victoria_2024.jpg/330px-National_Gallery_of_Victoria_2024.jpg" },
+      { id: "arts_centre_melbourne", name: "Arts Centre Melbourne", year: 1984, lat: -37.8216, lng: 144.9687, constellation: ["arts_and_culture", "modern_identity"], significance: 2, story: "Its spire has long pierced the skyline like a signal of imagination.", imageUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/5/57/Arts_Centre_Spire_Pano%2C_Melbourne%2C_jjron%2C_29.09.2010.jpg/960px-Arts_Centre_Spire_Pano%2C_Melbourne%2C_jjron%2C_29.09.2010.jpg" },
+      { id: "federation_square", name: "Federation Square", year: 2002, lat: -37.8177, lng: 144.9691, constellation: ["modern_identity", "everyday_life", "arts_and_culture"], significance: 5, story: "Federation Square reimagined the civic heart of Melbourne for a new century. Open, angular, and constantly occupied, it invites the city not simply to pass through, but to gather, witness, and participate.", imageUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/e/e6/MEL_federationssquare.jpg/1920px-MEL_federationssquare.jpg" },
+      { id: "acmi", name: "ACMI", year: 2002, lat: -37.8176, lng: 144.969, constellation: ["arts_and_culture", "modern_identity"], significance: 2, story: "At ACMI, storytelling enters the age of screens. Film, digital media, and interactive culture converge here.", imageUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/7/77/Australian_Centre_for_the_Moving_Image.jpg/960px-Australian_Centre_for_the_Moving_Image.jpg" },
+      { id: "birrarung_marr", name: "Birrarung Marr", year: 2002, lat: -37.8183, lng: 144.974, constellation: ["first_peoples_presence", "river_and_country", "modern_identity"], significance: 5, story: "Along the edge of the Birrarung, this open ground recalls a much older city than the one drawn in stone and steel. Birrarung Marr invites Melbourne to remember that Country was never empty.", imageUrl: "https://tcl.net.au/img/asset/YXNzZXRzL3Byb2plY3RzL2JpcnJhcnVuZy1tYXJyL0JpcnJhcnVuZy1NYXJyX1RheWxvci1DdWxsaXR5LUxldGhsZWFuXzE1LmpwZw==?w=1200&h=800" },
+      { id: "fitzroy_gardens_scarred_tree", name: "Fitzroy Gardens Scarred Tree", year: 1833, lat: -37.8138, lng: 144.9804, constellation: ["first_peoples_presence", "river_and_country"], significance: 4, story: "This scarred tree holds a quieter kind of monumentality. Long before the city named and paved this ground, bark was carefully taken here for everyday cultural use.", imageUrl: "https://citycollection.melbourne.vic.gov.au/wp-content/uploads/2021/09/1646955-1024x1021.jpg" },
+      { id: "koorie_heritage_trust", name: "Koorie Heritage Trust", year: 1985, lat: -37.818, lng: 144.9694, constellation: ["first_peoples_presence", "arts_and_culture", "modern_identity"], significance: 4, story: "By the banks of the Birrarung, the Koorie Heritage Trust speaks not of a vanished past, but of a living culture.", imageUrl: "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTEDd_G9bJT6ptM6V-btannCUvEhYUn3E4_tw&s" },
+      { id: "william_barak_bridge", name: "William Barak Bridge", year: 2005, lat: -37.8198, lng: 144.9738, constellation: ["first_peoples_presence", "river_and_country", "industry_and_motion"], significance: 3, story: "Stretching out from Birrarung Marr toward Yarra Park, the William Barak Bridge turns movement itself into remembrance.", imageUrl: "https://sport360.com/wp-content/uploads/articles6/media-32674.JPG" },
+      { id: "bunjilaka_aboriginal_cultural_centre", name: "Bunjilaka Aboriginal Cultural Centre", year: 2013, lat: -37.8032, lng: 144.9713, constellation: ["first_peoples_presence", "arts_and_culture", "modern_identity"], significance: 4, story: "Within Melbourne Museum, Bunjilaka refuses the idea that First Peoples history belongs only to the distant past.", imageUrl: "https://lh3.googleusercontent.com/gps-cs-s/AHVAwep96YF5KV9k3RW150Fn2bMsvSXD8VE4GvkCeWEuPFO8UoCy69x5xO9Y4g8QgFrxMI4efKgBUDovQ3QVsKyla8FM_82VdUn32SOH_zvUm0g1xq5lgxxc_6DxgA9arYmV5-aVB2UW=s1360-w1360-h1020-rw" }
+    ];
+
+    const ERAS = [
+      { id: "gold_rush", name: "Gold Rush", color: "#F5A623", bg: "public/res/ausMap.png",
+        intro: "In the 1850s, the discovery of gold transformed Melbourne from a quiet settlement into a roaring boomtown. Fortunes were made and lost overnight, and the city's skyline rose on the backs of miners, merchants, and dreamers chasing the glint of gold." },
+      { id: "civic_identity", name: "Civic Identity", color: "#7F77DD", bg: "public/res/melbMap.png",
+        intro: "As wealth flowed in, Melbourne began to imagine itself as a great city. Grand public buildings rose along wide boulevards, each one a declaration that this colony intended to rival the capitals of the old world." },
+      { id: "victorian_heritage", name: "Victorian Heritage", color: "#C084FC", bg: "public/res/melbMap.png",
+        intro: "The Victorian era left Melbourne with an extraordinary architectural legacy. Ornate facades, soaring domes, and elegant arcades speak of a time when the city dressed itself in stone and ambition." },
+      { id: "everyday_life", name: "Everyday Life", color: "#FB923C", bg: "public/res/melbMap.png",
+        intro: "Beyond the monuments and institutions lies the Melbourne of markets, trams, and street corners. These are the places where ordinary life unfolds, where the city's true character is written in daily rituals." },
+      { id: "industry_and_motion", name: "Industry & Motion", color: "#94A3B8", bg: "public/res/melbMap.png",
+        intro: "Railways, factories, and workshops powered Melbourne's growth. The rhythm of industry shaped the city's geography, connecting suburbs to centre and turning labour into the engine of modern urban life." },
+      { id: "sacred_and_memory", name: "Sacred & Memory", color: "#F472B6", bg: "public/res/melbMap.png",
+        intro: "Some places hold the weight of remembrance. Melbourne's sacred sites honour the fallen, shelter the faithful, and invite the city to pause, reflect, and carry its memories forward." },
+      { id: "modern_identity", name: "Modern Identity", color: "#60A5FA", bg: "public/res/melbMap.png",
+        intro: "From Federation Square's angular geometry to the laneways alive with street art, modern Melbourne is a city constantly reinventing itself. Bold, diverse, and unapologetically creative." },
+      { id: "arts_and_culture", name: "Arts & Culture", color: "#34D399", bg: "public/res/melbMap.png",
+        intro: "Melbourne's cultural soul runs deep. Galleries, theatres, and libraries form a constellation of creative spaces where art is not a luxury but a shared language spoken by the entire city." },
+      { id: "first_peoples_presence", name: "First Peoples", color: "#FBBF24", bg: "public/res/ausMap.png",
+        intro: "Long before the city bore its current name, this land was home to the world's oldest living civilisation. The Kulin Nations have cared for Country for over 60,000 years, and their presence endures in every river bend and scarred tree." },
+      { id: "river_and_country", name: "River & Country", color: "#2DD4BF", bg: "public/res/ausMap.png",
+        intro: "The Birrarung, river of mists, has shaped this landscape since time immemorial. These sites trace the deep connection between water, land, and the people who have always known this Country." }
+    ];
+
+    const NODE_FOCUS_TARGET_X = 50;
+    const NODE_FOCUS_TARGET_Y = 50;
+    const ERA_VIEW_SCALE = 1.6;
+    const DETAIL_PANEL_WIDTH_RATIO = 0.34;
+    const DETAIL_PANEL_MIN_WIDTH = 260;
+    const DETAIL_PANEL_MAX_WIDTH = 520;
+    const DETAIL_PANEL_GAP = 16;
+
+    function mapToCanvas(lat, lng) {
+      const minLat = -37.835, maxLat = -37.800;
+      const minLng = 144.950, maxLng = 144.985;
+      const x = ((lng - minLng) / (maxLng - minLng)) * 70 + 15;
+      const y = ((lat - minLat) / (maxLat - minLat)) * 65 + 17;
+      return { x: Math.max(5, Math.min(95, x)), y: Math.max(5, Math.min(95, y)) };
+    }
+
+    function getNodeFocusOffset(landmark, layerScale, targetX = NODE_FOCUS_TARGET_X, targetY = NODE_FOCUS_TARGET_Y) {
+      const pos = mapToCanvas(landmark.lat, landmark.lng);
+      return {
+        tx: (targetX - pos.x) * layerScale,
+        ty: (targetY - pos.y) * layerScale,
+      };
+    }
+
+    function getEraColor(eraId) {
+      const era = ERAS.find(e => e.id === eraId);
+      return era ? era.color : "#FFD984";
+    }
+
+    function getEraBackground(eraId) {
+      const era = ERAS.find(e => e.id === eraId);
+      return era ? era.bg : "";
+    }
+
+    function ParticleCanvas() {
+      const canvasRef = useRef(null);
+
+      useEffect(() => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+
+        const shootingStars = [];
+        const dustParticles = [];
+
+        function createShootingStar() {
+          return {
+            x: Math.random() * canvas.width,
+            y: Math.random() * canvas.height * 0.5,
+            len: 40 + Math.random() * 80,
+            speed: 4 + Math.random() * 6,
+            angle: Math.PI / 4 + (Math.random() - 0.5) * 0.5,
+            opacity: 1,
+            decay: 0.01 + Math.random() * 0.02,
+          };
+        }
+
+        for (let i = 0; i < 50; i++) {
+          dustParticles.push({
+            x: Math.random() * canvas.width,
+            y: Math.random() * canvas.height,
+            size: 0.5 + Math.random() * 1.5,
+            speedX: (Math.random() - 0.5) * 0.3,
+            speedY: (Math.random() - 0.5) * 0.2,
+            opacity: 0.1 + Math.random() * 0.3,
+          });
+        }
+
+        function animate() {
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+          if (Math.random() < 0.015 && shootingStars.length < 4) {
+            shootingStars.push(createShootingStar());
+          }
+
+          for (let i = shootingStars.length - 1; i >= 0; i--) {
+            const s = shootingStars[i];
+            s.x += Math.cos(s.angle) * s.speed;
+            s.y += Math.sin(s.angle) * s.speed;
+            s.opacity -= s.decay;
+
+            if (s.opacity <= 0) { shootingStars.splice(i, 1); continue; }
+
+            const tailX = s.x - Math.cos(s.angle) * s.len;
+            const tailY = s.y - Math.sin(s.angle) * s.len;
+            const grad = ctx.createLinearGradient(tailX, tailY, s.x, s.y);
+            grad.addColorStop(0, `rgba(255,255,255,0)`);
+            grad.addColorStop(1, `rgba(255,255,255,${s.opacity})`);
+            ctx.strokeStyle = grad;
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            ctx.moveTo(tailX, tailY);
+            ctx.lineTo(s.x, s.y);
+            ctx.stroke();
+          }
+
+          dustParticles.forEach(p => {
+            p.x += p.speedX;
+            p.y += p.speedY;
+            if (p.x < 0) p.x = canvas.width;
+            if (p.x > canvas.width) p.x = 0;
+            if (p.y < 0) p.y = canvas.height;
+            if (p.y > canvas.height) p.y = 0;
+            ctx.fillStyle = `rgba(255,255,255,${p.opacity})`;
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+            ctx.fill();
+          });
+
+          requestAnimationFrame(animate);
+        }
+        animate();
+
+        function handleResize() {
+          canvas.width = window.innerWidth;
+          canvas.height = window.innerHeight;
+        }
+        window.addEventListener('resize', handleResize);
+        return () => window.removeEventListener('resize', handleResize);
+      }, []);
+
+      return <canvas ref={canvasRef} id="particles-canvas" />;
+    }
+
+    function StarNode({ landmark, color, onSelect, isSelected, isDimmed, isNew, inEraView }) {
+      const pos = mapToCanvas(landmark.lat, landmark.lng);
+      const size = 8 + landmark.significance * 4;
+      const luminosity = 0.5 + landmark.significance * 0.2;
+      // Each star gets a unique twinkle rhythm based on its id hash
+      const hash = landmark.id.split('').reduce((a, c) => a + c.charCodeAt(0), 0);
+      const twinkleDuration = 2.2 + (hash % 30) * 0.1;  // 2.2s ~ 5.1s
+      const twinkleDelay = (hash % 20) * 0.15;  // 0 ~ 3s
+
+      let haloCount = size <= 14 ? 1 : size <= 19 ? 2 : size <= 26 ? 3 : 4;
+
+      return (
+        <button
+          className={`star-node ${isSelected ? 'is-selected' : ''} ${isDimmed ? 'is-dimmed' : ''} ${isNew ? 'is-new' : ''}`}
+          style={{
+            left: `${pos.x}%`,
+            top: `${pos.y}%`,
+            '--node-size': size,
+            '--node-luminosity': luminosity,
+            '--star-color': color,
+            '--twinkle-duration': `${twinkleDuration}s`,
+            animationDelay: `${twinkleDelay}s`,
+          }}
+          onClick={(e) => {
+            e.stopPropagation();
+            onSelect(landmark);
+          }}
+          aria-label={`${landmark.name}, ${landmark.year}`}
+        >
+          <span className="star-label">{landmark.name}</span>
+          <div className="star-halo">
+            {Array.from({ length: haloCount }).map((_, i) => (
+              <div
+                key={i}
+                className="star-halo-ring"
+                style={{ width: `${100 + (i + 1) * 18}%`, height: `${100 + (i + 1) * 18}%`, '--ring-color': color }}
+              />
+            ))}
+          </div>
+        </button>
+      );
+    }
+
+    // Era introduction overlay — title + word-by-word text + sparkles
+    function EraIntro({ era }) {
+      if (!era) return null;
+
+      const words = era.intro.split(' ');
+      const wordDelay = 0.06; // seconds per word
+      const startDelay = 0.5;  // wait for title animation
+
+      // Generate sparkle particles
+      const sparkleCount = 20;
+      const sparkles = Array.from({ length: sparkleCount }).map((_, i) => {
+        const left = 10 + Math.random() * 80;
+        const top = 20 + Math.random() * 60;
+        const dur = 1.8 + Math.random() * 1.5;
+        const delay = 0.3 + Math.random() * (words.length * wordDelay + startDelay);
+        const size = 1.5 + Math.random() * 2.5;
+        return { left, top, dur, delay, size };
+      });
+
+      return (
+        <div className="era-intro" key={era.id}>
+          {/* Sparkle particles */}
+          <div className="era-sparkles">
+            {sparkles.map((s, i) => (
+              <div
+                key={`sparkle-${i}`}
+                className="sparkle"
+                style={{
+                  left: `${s.left}%`,
+                  top: `${s.top}%`,
+                  width: `${s.size}px`,
+                  height: `${s.size}px`,
+                  background: era.color,
+                  boxShadow: `0 0 ${s.size * 2}px ${era.color}`,
+                  '--sparkle-dur': `${s.dur}s`,
+                  '--sparkle-delay': `${s.delay}s`,
+                }}
+              />
+            ))}
+          </div>
+
+          {/* Title */}
+          <h2
+            className="era-intro-title"
+            style={{ color: era.color, '--era-glow': `${era.color}66` }}
+          >
+            {era.name}
+          </h2>
+
+          {/* Word-by-word text */}
+          <p className="era-intro-text">
+            {words.map((word, i) => (
+              <span
+                key={`word-${i}`}
+                className="intro-word"
+                style={{ animationDelay: `${startDelay + i * wordDelay}s` }}
+              >
+                {word}{' '}
+              </span>
+            ))}
+          </p>
+        </div>
+      );
+    }
+
+    // Constellation lines SVG — connects stars in same era by year order
+    function ConstellationLines({ landmarks, currentEra, color }) {
+      if (!currentEra) return null;
+
+      // Filter landmarks belonging to this era and sort by year
+      const eraLandmarks = landmarks
+        .filter(lm => lm.constellation.includes(currentEra))
+        .sort((a, b) => a.year - b.year);
+
+      if (eraLandmarks.length < 2) return null;
+
+      const positions = eraLandmarks.map(lm => mapToCanvas(lm.lat, lm.lng));
+
+      return (
+        <svg className="constellation-lines" viewBox="0 0 100 100" preserveAspectRatio="none"
+          style={{ width: '100%', height: '100%' }}>
+          <defs>
+            <filter id={`glow-${currentEra}`}>
+              <feGaussianBlur stdDeviation="0.3" result="blur" />
+              <feMerge>
+                <feMergeNode in="blur" />
+                <feMergeNode in="SourceGraphic" />
+              </feMerge>
+            </filter>
+          </defs>
+          {positions.map((pos, i) => {
+            if (i === 0) return null;
+            const prev = positions[i - 1];
+            const dx = pos.x - prev.x;
+            const dy = pos.y - prev.y;
+            const lineLen = Math.sqrt(dx*dx + dy*dy);
+            const drawDuration = Math.max(400, lineLen * 30);
+            const delay = positions.slice(1, i).reduce((acc, p, j) => {
+              const px = positions[j];
+              return acc + Math.max(400, Math.sqrt((p.x-px.x)**2 + (p.y-px.y)**2) * 30);
+            }, 200);
+
+            return (
+              <React.Fragment key={`line-${i}`}>
+                {/* Glow layer */}
+                <line
+                  x1={prev.x} y1={prev.y} x2={pos.x} y2={pos.y}
+                  stroke={color} strokeWidth="0.6" strokeLinecap="round"
+                  filter={`url(#glow-${currentEra})`}
+                  className="constellation-line-glow"
+                  style={{
+                    '--draw-duration': `${drawDuration}ms`,
+                    '--draw-delay': `${delay}ms`,
+                  }}
+                />
+                {/* Core line */}
+                <line
+                  x1={prev.x} y1={prev.y} x2={pos.x} y2={pos.y}
+                  stroke={color} strokeWidth="0.18" strokeLinecap="round"
+                  className="constellation-line-core"
+                  style={{
+                    '--line-len': lineLen,
+                    '--draw-duration': `${drawDuration}ms`,
+                    '--draw-delay': `${delay}ms`,
+                  }}
+                />
+              </React.Fragment>
+            );
+          })}
+        </svg>
+      );
+    }
+
+    // Add Star Form component
+    function AddStarForm({ onSubmit, onClose }) {
+      const [name, setName] = useState('');
+      const [year, setYear] = useState('');
+      const [lat, setLat] = useState('-37.815');
+      const [lng, setLng] = useState('144.965');
+      const [significance, setSignificance] = useState('3');
+      const [story, setStory] = useState('');
+      const [selectedEras, setSelectedEras] = useState([]);
+
+      function toggleEra(eraId) {
+        setSelectedEras(prev =>
+          prev.includes(eraId) ? prev.filter(e => e !== eraId) : [...prev, eraId]
+        );
+      }
+
+      function handleSubmit(e) {
+        e.preventDefault();
+        if (!name.trim() || !year || selectedEras.length === 0) return;
+        onSubmit({
+          id: 'user_' + Date.now(),
+          name: name.trim(),
+          year: parseInt(year),
+          lat: parseFloat(lat),
+          lng: parseFloat(lng),
+          constellation: selectedEras,
+          significance: parseInt(significance),
+          story: story.trim() || 'A new star in Melbourne\'s constellation.',
+          imageUrl: '',
+          isUserAdded: true,
+        });
+      }
+
+      return (
+        <div className="add-star-overlay visible" onClick={onClose}>
+          <form className="add-star-form" onClick={e => e.stopPropagation()} onSubmit={handleSubmit}>
+            <h2>Add a New Star</h2>
+            <div className="form-group">
+              <label>Name *</label>
+              <input value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Luna Park Melbourne" required />
+            </div>
+            <div className="form-row">
+              <div className="form-group">
+                <label>Year *</label>
+                <input type="number" value={year} onChange={e => setYear(e.target.value)} placeholder="e.g. 1912" required />
+              </div>
+              <div className="form-group">
+                <label>Significance (1-5)</label>
+                <select value={significance} onChange={e => setSignificance(e.target.value)}>
+                  <option value="1">1 - Minor</option>
+                  <option value="2">2 - Notable</option>
+                  <option value="3">3 - Significant</option>
+                  <option value="4">4 - Important</option>
+                  <option value="5">5 - Landmark</option>
+                </select>
+              </div>
+            </div>
+            <div className="form-row">
+              <div className="form-group">
+                <label>Latitude</label>
+                <input type="number" step="0.0001" value={lat} onChange={e => setLat(e.target.value)} />
+              </div>
+              <div className="form-group">
+                <label>Longitude</label>
+                <input type="number" step="0.0001" value={lng} onChange={e => setLng(e.target.value)} />
+              </div>
+            </div>
+            <div className="form-group">
+              <label>Eras * (select at least one)</label>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '4px' }}>
+                {ERAS.map(era => (
+                  <button
+                    key={era.id}
+                    type="button"
+                    onClick={() => toggleEra(era.id)}
+                    style={{
+                      padding: '4px 10px', borderRadius: '999px', fontSize: '11px', fontWeight: 600,
+                      border: `1px solid ${selectedEras.includes(era.id) ? era.color : 'rgba(255,255,255,0.2)'}`,
+                      background: selectedEras.includes(era.id) ? `${era.color}22` : 'transparent',
+                      color: selectedEras.includes(era.id) ? era.color : 'rgba(255,255,255,0.5)',
+                      cursor: 'pointer', fontFamily: 'inherit',
+                      transition: 'all 200ms ease',
+                    }}
+                  >
+                    {era.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="form-group">
+              <label>Story</label>
+              <textarea value={story} onChange={e => setStory(e.target.value)} placeholder="Tell the story of this landmark..." />
+            </div>
+            <div className="form-actions">
+              <button type="button" className="form-cancel" onClick={onClose}>Cancel</button>
+              <button type="submit" className="form-submit">Add Star</button>
+            </div>
+          </form>
+        </div>
+      );
+    }
+
+    function App() {
+      const [showWelcome, setShowWelcome] = useState(true);
+      const [selectedLandmark, setSelectedLandmark] = useState(null);
+      const [currentEra, setCurrentEra] = useState(null);
+      const [showAddForm, setShowAddForm] = useState(false);
+      const [allLandmarks, setAllLandmarks] = useState(LANDMARKS);
+      const [newStarId, setNewStarId] = useState(null);
+      const canvasRef = useRef(null);
+      const [viewportWidth, setViewportWidth] = useState(window.innerWidth);
+
+      useEffect(() => {
+        const handleResize = () => setViewportWidth(window.innerWidth);
+        window.addEventListener('resize', handleResize);
+        return () => window.removeEventListener('resize', handleResize);
+      }, []);
+
+      const visibleLandmarks = currentEra
+        ? allLandmarks.filter(lm => lm.constellation.includes(currentEra))
+        : allLandmarks;
+
+      const detailPanelWidth = Math.round(
+        Math.min(
+          DETAIL_PANEL_MAX_WIDTH,
+          Math.max(DETAIL_PANEL_MIN_WIDTH, viewportWidth * DETAIL_PANEL_WIDTH_RATIO)
+        )
+      );
+      const panelReservedPercent = selectedLandmark
+        ? (detailPanelWidth + DETAIL_PANEL_GAP) / Math.max(1, viewportWidth) * 100
+        : 0;
+      const dynamicFocusTargetX = Math.max(16, NODE_FOCUS_TARGET_X - panelReservedPercent / 2);
+
+      const layerScale = currentEra ? ERA_VIEW_SCALE : 1;
+      const cameraOffset = selectedLandmark
+        ? getNodeFocusOffset(selectedLandmark, layerScale, dynamicFocusTargetX, NODE_FOCUS_TARGET_Y)
+        : { tx: 0, ty: 0 };
+      const layerTransform = `translate(${cameraOffset.tx}%, ${cameraOffset.ty}%) scale(${layerScale})`;
+      const selectedConstellations = selectedLandmark ? new Set(selectedLandmark.constellation) : null;
+      const appShellStyle = {
+        '--detail-panel-width': `${detailPanelWidth}px`,
+        '--detail-panel-gap': `${DETAIL_PANEL_GAP}px`,
+      };
+
+      const currentEraData = currentEra ? ERAS.find(e => e.id === currentEra) : null;
+      const bgImage = currentEraData ? currentEraData.bg : "";
+      const eraColor = currentEraData ? currentEraData.color : "#FFD984";
+
+      function handleAddStar(newLandmark) {
+        setAllLandmarks(prev => [...prev, newLandmark]);
+        setNewStarId(newLandmark.id);
+        setShowAddForm(false);
+        setTimeout(() => setNewStarId(null), 3000);
+      }
+
+      return (
+        <div className={`app-shell ${selectedLandmark ? 'has-detail-open' : ''}`} style={appShellStyle}>
+          {/* Welcome Overlay */}
+          <div className={`welcome-overlay ${showWelcome ? '' : 'hidden'}`}>
+            <h1 className="welcome-title">Stellar Stories</h1>
+            <p className="welcome-subtitle">Melbourne's Living Map of Memory</p>
+            <p className="welcome-desc">
+              Explore Melbourne's most iconic landmarks as a constellation of stars. Each star tells a story spanning from the Gold Rush era to modern-day cultural icons. Click, hover, and discover the history that shaped this city.
+            </p>
+            <button
+              className="welcome-enter"
+              onClick={() => setShowWelcome(false)}
+            >
+              Enter the Stars
+            </button>
+          </div>
+
+          {/* Add Star Button */}
+          {!showWelcome && (
+            <button className="add-star-btn" onClick={() => setShowAddForm(true)}>
+              + Add Star
+            </button>
+          )}
+
+          {/* Star Canvas */}
+          <div className="star-canvas" ref={canvasRef} onClick={() => {
+            setSelectedLandmark(null);
+          }}>
+            <ParticleCanvas />
+
+            <div className={`canvas-bg-image ${currentEra ? 'visible' : ''}`} style={{ backgroundImage: bgImage ? `url(${bgImage})` : 'none' }}>
+              {bgImage && <img src={bgImage} alt="Map background" />}
+            </div>
+
+            {/* Constellation Lines — only when era is selected */}
+            {currentEra && (
+              <div className={`node-layer ${currentEra ? 'era-view' : ''}`} style={{ pointerEvents: 'none', zIndex: 1, transform: layerTransform }}>
+                <ConstellationLines
+                  landmarks={allLandmarks}
+                  currentEra={currentEra}
+                  color={eraColor}
+                />
+              </div>
+            )}
+
+            <div className={`node-layer ${currentEra ? 'era-view' : ''}`} style={{
+              opacity: !showWelcome ? 1 : 0,
+              pointerEvents: !showWelcome ? 'auto' : 'none',
+              transform: layerTransform,
+            }}>
+              {visibleLandmarks.map(landmark => {
+                const primaryEra = currentEra || landmark.constellation[0];
+                const color = getEraColor(primaryEra);
+                const isSelected = selectedLandmark?.id === landmark.id;
+                const isDimmed = selectedLandmark && !isSelected;
+                const isNew = landmark.id === newStarId;
+
+                return (
+                  <StarNode
+                    key={landmark.id}
+                    landmark={landmark}
+                    color={color}
+                    onSelect={setSelectedLandmark}
+                    isSelected={isSelected}
+                    isDimmed={isDimmed}
+                    isNew={isNew}
+                    inEraView={!!currentEra}
+                  />
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Era Controls */}
+          <div className={`era-controls ${currentEra ? 'hidden' : ''}`}>
+            {ERAS.map(era => (
+              <button
+                key={era.id}
+                className={`era-btn era-button ${selectedConstellations && !selectedConstellations.has(era.id) ? 'is-dimmed' : ''}`}
+                onClick={() => setCurrentEra(era.id)}
+                style={{
+                  borderColor: `${era.color}44`,
+                  color: era.color
+                }}
+              >
+                {era.name}
+              </button>
+            ))}
+          </div>
+
+          {/* Era Intro — title + text + sparkles */}
+          {currentEra && (
+            <EraIntro era={currentEraData} />
+          )}
+
+          {/* Back Button */}
+          <button
+            className={`back-btn ${currentEra ? 'visible' : ''}`}
+            onClick={() => setCurrentEra(null)}
+          >
+            Back
+          </button>
+
+          {/* Detail Panel */}
+          <div className={`detail-close-zone ${selectedLandmark ? 'active' : ''}`} onClick={() => setSelectedLandmark(null)} />
+          <div className={`detail-panel ${selectedLandmark ? 'visible' : ''}`}>
+            {selectedLandmark && (
+              <>
+                <h2 className="detail-name">{selectedLandmark.name}</h2>
+                <div className="detail-year">Year: {selectedLandmark.year}</div>
+
+                <div className="detail-eras">
+                  {selectedLandmark.constellation.map(eraId => {
+                    const era = ERAS.find(e => e.id === eraId);
+                    return era ? (
+                      <div
+                        key={eraId}
+                        className="era-badge"
+                        style={{ backgroundColor: `${era.color}33` }}
+                      >
+                        {era.name}
+                      </div>
+                    ) : null;
+                  })}
+                </div>
+
+                <div className="detail-image">
+                  <img
+                    src={selectedLandmark.imageUrl}
+                    alt={selectedLandmark.name}
+                    onError={(e) => e.target.style.display = 'none'}
+                  />
+                </div>
+
+                <p className="detail-story">{selectedLandmark.story}</p>
+              </>
+            )}
+          </div>
+
+          {/* Add Star Form Modal */}
+          {showAddForm && (
+            <AddStarForm
+              onSubmit={handleAddStar}
+              onClose={() => setShowAddForm(false)}
+            />
+          )}
+        </div>
+      );
+    }
+
+    ReactDOM.render(<App />, document.getElementById('app'));
+  </script>
+</body>
+</html>
